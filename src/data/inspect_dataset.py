@@ -443,8 +443,8 @@ def print_report(schema: dict, stats: dict, brand_examples: dict) -> None:
 
 def main() -> None:
     print("\n" + "=" * 70)
-    print("  Phase 1 — Dataset Inspection")
-    print("  Hiver AI Customer Support Agent")
+    print("  Dataset Inspection")
+    print("  AI Customer Support Agent")
     print("=" * 70)
 
     # Guard: ensure the dataset exists before doing anything

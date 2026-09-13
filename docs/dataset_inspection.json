@@ -1,5 +1,5 @@
 {
-  "dataset_path": "/home/mohanraj/Desktop/Hiver/twcs/twcs.csv",
+  "dataset_path": "twcs/twcs.csv",
   "columns": [
     "tweet_id",
     "author_id",

@@ -1,8 +1,8 @@
 # =============================================================================
-# requirements.txt — Hiver AI Customer Support Agent
+# requirements.txt — AI Customer Support Agent
 # =============================================================================
-# Phase 0: Minimal dependencies for project scaffolding and initial data
-# inspection only.
+# Phase 0–2: Scaffolding, dataset inspection, brand extraction,
+# conversation reconstruction, and intent taxonomy (pyyaml added in Phase 2).
 #
 # These packages are either already installed in the project virtual environment
 # or are small, safe additions needed for Phase 1 (dataset inspection).
@@ -49,3 +49,10 @@ requests>=2.31
 # Testing — already installed (pytest is not in the venv yet, will install)
 # ---------------------------------------------------------------------------
 pytest>=8.0
+
+# ---------------------------------------------------------------------------
+# YAML configuration parsing
+# Used by src/classification/intent_loader.py to read intents.yaml
+# Already installed in .venv (6.0.3)
+# ---------------------------------------------------------------------------
+pyyaml>=6.0

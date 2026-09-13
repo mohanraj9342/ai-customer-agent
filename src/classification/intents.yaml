@@ -1,0 +1,190 @@
+# intent taxonomy for AppleSupport
+# ============================================================
+# This file defines the intent labels used to classify inbound
+# customer tweets directed at the selected brand.
+#
+# Design principles:
+#   - Keep the set small (5-10 labels) to stay tractable for hand-labelling.
+#   - Every intent must be mutually exclusive at the primary level.
+#   - The "other" intent acts as a mandatory catch-all.
+#   - "auto_handle" indicates whether this intent is a candidate for
+#     automatic response without human review.
+#   - "escalation_risk" indicates whether this intent commonly requires
+#     human escalation (billing, safety, legal, account access).
+#
+# Evidence basis:
+#   These intents are derived from manual review of actual customer tweets
+#   in the AppleSupport subset.  Topics without sufficient examples were
+#   merged with related categories or placed in "other".
+#
+# File format: YAML list of intent objects.
+# Loading: use src/classification/intent_loader.py
+# ============================================================
+
+intents:
+
+  - name: software_update_issue
+    display_name: "Software / OS Update Issue"
+    definition: >
+      The customer reports a problem that started after, or is directly related
+      to, a software update, iOS version, macOS version, or app update.
+      Includes slow performance, bugs introduced by updates, failed updates,
+      and requests about specific iOS/macOS versions.
+    inclusion_criteria:
+      - Mentions "update", "iOS", "macOS", "High Sierra", "upgrade"
+      - Problem began after installing a software update
+      - Asks whether a bug fix update is coming
+    exclusion_criteria:
+      - Hardware damage not related to software (→ device_hardware_issue)
+      - Cannot sign in after update (→ account_access_issue)
+    auto_handle: true
+    escalation_risk: false
+    examples:
+      - "this new update jacked up my phone"
+      - "iOS 11 is killing my battery — fix it"
+      - "My MacBook Pro is dead after upgrading to 10.13.1"
+
+  - name: battery_performance_issue
+    display_name: "Battery or Performance Issue"
+    definition: >
+      The customer reports unusually short battery life, rapid battery drain,
+      overheating, device slowness, or poor performance not caused by a
+      specific hardware defect.  Includes requests for battery-related advice.
+    inclusion_criteria:
+      - Mentions "battery", "drain", "slow", "overheating", "performance"
+      - Reports device is sluggish or laggy
+      - Battery percentage dropping unusually fast
+    exclusion_criteria:
+      - Hardware damage (cracked screen, liquid damage) → device_hardware_issue
+      - Update-caused slowdown where update is the primary complaint
+        → software_update_issue
+    auto_handle: true
+    escalation_risk: false
+    examples:
+      - "my iPhone battery drops from 50% to 14% in less than 2 hours"
+      - "battery drains so fast on iPhone 6 after update"
+      - "my phone overheats when charging"
+
+  - name: account_access_issue
+    display_name: "Account / iCloud / Login Issue"
+    definition: >
+      The customer cannot sign in to their Apple ID, iCloud, iTunes, or
+      App Store account.  Includes forgotten passwords, two-factor
+      authentication problems, account locked or suspended, and difficulty
+      accessing purchased content.
+    inclusion_criteria:
+      - Cannot log in to Apple ID, iCloud, iTunes, App Store
+      - Account locked, disabled, or suspended
+      - Two-factor authentication not working
+      - Forgotten Apple ID password
+    exclusion_criteria:
+      - App-specific login (e.g. third-party app) → app_or_service_issue
+      - Device activation (new device setup) → device_hardware_issue
+    auto_handle: false
+    escalation_risk: true
+    examples:
+      - "I can't log into my iTunes account or iCloud on my phone"
+      - "my Apple ID is locked and I can't get the verification code"
+      - "I signed in with Apple ID but now I can't login to my MacBook Air"
+
+  - name: device_hardware_issue
+    display_name: "Device Hardware or Physical Issue"
+    definition: >
+      The customer reports a physical hardware defect, damage, or malfunction
+      on an Apple device.  Includes cracked screens, liquid damage, broken
+      buttons, charging port issues, speaker/microphone problems, camera
+      faults, and activation issues for new devices.
+    inclusion_criteria:
+      - Physical damage: cracked screen, liquid damage, broken button
+      - Hardware malfunction: speaker, camera, microphone, Touch ID not working
+      - Charging cable or port issue
+      - Device will not turn on
+      - New device setup / activation stuck
+    exclusion_criteria:
+      - Software-only problems → software_update_issue or battery_performance_issue
+      - iCloud/Apple ID issues → account_access_issue
+    auto_handle: false
+    escalation_risk: true
+    examples:
+      - "my iPhone screen is cracked and now touch doesn't work"
+      - "my charging cable stopped working after 2 weeks"
+      - "my MacBook Pro is completely dead — won't turn on"
+
+  - name: app_or_service_issue
+    display_name: "App or Third-Party Service Issue"
+    definition: >
+      The customer reports a problem with a specific Apple app (e.g. Apple
+      Music, FaceTime, iMessage, Safari, Maps, Siri, CarPlay) or a behaviour
+      that is app-specific rather than system-wide.
+    inclusion_criteria:
+      - Names a specific Apple app or feature
+      - iMessage, FaceTime, Siri, Safari, Apple Maps, CarPlay, AirDrop
+      - App crashes, freezes, or behaves incorrectly
+      - Notifications not working for a specific app
+    exclusion_criteria:
+      - Third-party app issues the brand cannot directly fix → other
+      - System-wide crashes → device_hardware_issue or software_update_issue
+    auto_handle: true
+    escalation_risk: false
+    examples:
+      - "iMessage is not sending to Android users"
+      - "Siri won't set alarms correctly since the update"
+      - "Apple Car Play keeps disconnecting from my iPhone"
+
+  - name: feature_how_to_question
+    display_name: "Feature Question or How-To Request"
+    definition: >
+      The customer asks how to use a feature, requests a tip or tutorial,
+      or wants to know whether a feature exists.  No malfunction is involved —
+      the customer simply does not know how to do something.
+    inclusion_criteria:
+      - "How do I …"
+      - "Can I …"
+      - "Is there a way to …"
+      - Asking about a feature that exists but they cannot find
+      - Requesting a step-by-step guide
+    exclusion_criteria:
+      - Feature is broken (not just unknown) → relevant specific intent
+      - Feature request for something that does not yet exist → other
+    auto_handle: true
+    escalation_risk: false
+    examples:
+      - "how do I share my handwritten notes as text from the native iOS notes app"
+      - "Is there a way to prevent my Apple Car Play from automatically playing music"
+      - "how do I turn off automatic app updates"
+
+  - name: other
+    display_name: "Other / Unclear"
+    definition: >
+      The message does not fit any of the above intents, is too ambiguous to
+      classify reliably, is a continuation tweet with insufficient context, or
+      concerns a topic outside the scope of the defined taxonomy.
+      This is the mandatory catch-all intent.
+    inclusion_criteria:
+      - Cannot be reliably assigned to any other intent
+      - Very short tweets with no discernible topic ("@AppleSupport ok")
+      - Continuation replies with no standalone meaning
+      - Topics outside Apple product support scope
+    exclusion_criteria:
+      - Any tweet that fits a more specific intent above
+    auto_handle: false
+    escalation_risk: false
+    examples:
+      - "@AppleSupport ok thanks"
+      - "@AppleSupport https://t.co/somelink"
+      - "@AppleSupport see attached"
+
+# ============================================================
+# Metadata
+# ============================================================
+metadata:
+  brand: AppleSupport
+  version: "1.0"
+  total_intents: 7
+  fallback_intent: other
+  status: draft
+  notes: >
+    This taxonomy is a draft derived from manual inspection of a sample of
+    customer tweets.  It will be refined during the labelling phase once
+    inter-rater agreement is measured.  The intent counts and boundaries
+    may change based on actual label distribution in the training set.

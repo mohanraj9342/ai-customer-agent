@@ -1,6 +1,6 @@
-# AI Customer Support Agent — Hiver SDE Intern Take-Home Assignment
+# AI Customer Support Agent
 
-[![Status](https://img.shields.io/badge/status-Phase%200%20%E2%80%94%20Scaffolding-yellow)]()
+[![Status](https://img.shields.io/badge/status-Phase%202%20%E2%80%94%20In%20Progress-blue)]()
 [![Python](https://img.shields.io/badge/python-3.14-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 
@@ -8,116 +8,125 @@
 
 ## Project Overview
 
-This project builds a Twitter-based AI customer support agent for a selected brand, using the
+An end-to-end AI customer-support agent built on the publicly available
 [Customer Support on Twitter](https://www.kaggle.com/datasets/thoughtvector/customer-support-on-twitter)
-dataset (Kaggle: `thoughtvector/customer-support-on-twitter`).
+dataset (`thoughtvector/customer-support-on-twitter` on Kaggle).
 
-The agent must:
+The agent is designed to:
 
-1. **Classify** each incoming customer tweet into a small, well-defined set of support intents.
+1. **Classify** each incoming customer tweet into a defined set of support intents.
 2. **Retrieve** historically similar resolved conversations from the same brand.
-3. **Draft a reply** grounded in how the brand previously resolved similar issues.
+3. **Draft a reply** grounded in how the brand historically resolved similar issues.
 4. **Decide** whether the case should be handled automatically or escalated to a human agent,
-   and provide a clear reason for the decision.
+   with a clear reason for the decision.
 
 ---
 
 ## Current Status
 
-> **Phase 0 — Project Scaffolding**
+> **Phase 2 — Brand extraction, conversation reconstruction, and intent definition**
 >
-> The directory structure, `.gitignore`, `README.md`, and `requirements.txt` have been created.
-> No model has been trained. No evaluation has been run. No metrics have been reported.
-> Implementation begins in Phase 1.
+> Phase 1 (dataset inspection) is complete. Brand selection is recorded in
+> `docs/brand_selection.md`. Phase 2 implements the brand-specific extraction
+> pipeline, conversation thread reconstruction, and initial intent taxonomy.
 
 ---
 
-## Planned Components
+## Components
 
 | Component | Description | Status |
 |---|---|---|
-| Data ingestion | Extract and filter brand-specific conversations from the dataset | Not started |
-| Intent discovery | Surface natural topic clusters from real customer messages | Not started |
-| Intent labelling | Define 6–8 named intent classes; hand-label a training set | Not started |
-| Intent classifier | Train a baseline (TF-IDF + Logistic Regression) and a main classifier | Not started |
-| Retrieval index | Build a similarity index over historical brand responses | Not started |
-| Reply generation | Use an LLM API to draft grounded replies from retrieved evidence | Not started |
-| Escalation logic | Decide auto-handle vs. human escalation; output a reason | Not started |
-| Evaluation harness | Automated metrics + LLM-as-judge + human agreement measurement | Not started |
-| Golden evaluation set | 150–250 hand-labelled examples sampled from held-out data | Not started |
-| Report and decision log | 6-page report + 10–15-item engineering decision log | Not started |
+| Dataset inspection | Measure schema, brand distribution, row counts | ✅ Done |
+| Brand selection | Evidence-based brand choice | ✅ Done |
+| Data extraction | Filter brand-specific conversations from the dataset | 🔄 Phase 2 |
+| Conversation reconstruction | Rebuild multi-turn threads from tweet links | 🔄 Phase 2 |
+| Intent taxonomy | Define 6–8 named intent classes | 🔄 Phase 2 |
+| Intent labelling | Hand-label a training set | Not started |
+| Intent classifier | TF-IDF baseline and embedding-based main classifier | Not started |
+| Retrieval index | Similarity index over historical brand responses | Not started |
+| Reply generation | LLM-based grounded reply drafting | Not started |
+| Escalation logic | Auto-handle vs. human escalation with reasons | Not started |
+| Evaluation harness | Automated metrics + LLM-as-judge + human agreement | Not started |
+| Golden evaluation set | 150–250 hand-labelled held-out examples | Not started |
+| Report and decision log | Technical report + engineering decision log | In progress |
 
 ---
 
-## Planned Development Phases
+## Development Phases
 
 | Phase | Objective |
 |---|---|
-| **0** | Project scaffolding (current) |
-| **1** | Safe dataset inspection and brand selection |
-| **2** | Data extraction, cleaning, and conversation reconstruction |
-| **3** | Intent discovery and labelling |
+| **0** | Project scaffolding ✅ |
+| **1** | Dataset inspection and brand selection ✅ |
+| **2** | Brand extraction, conversation reconstruction, intent definition 🔄 |
+| **3** | Intent labelling and training set creation |
 | **4** | Intent classifier — baseline and main system |
 | **5** | Retrieval index construction |
-| **6** | LLM-based reply generation (pending API approval) |
+| **6** | LLM-based reply generation |
 | **7** | Escalation decision logic |
 | **8** | Golden evaluation set creation |
-| **9** | Evaluation harness: automated metrics + LLM judge |
-| **10** | Report, decision log, and README polish |
+| **9** | Evaluation harness |
+| **10** | Report polish and public demo preparation |
 
 ---
 
-## Dataset Note
+## Dataset
 
-The dataset (`twcs/twcs.csv`, ~493 MB; `archive.zip`, ~169 MB) is stored **locally only**.
+The dataset (`twcs/twcs.csv`, ~493 MB) is stored **locally only** and is not committed
+to this repository.
 
-- **Do not** commit the dataset to this repository.
-- **Do not** download another copy of the dataset.
-- The `.gitignore` excludes all raw data, ZIP archives, and CSV files.
-- If you are reproducing this project, download the dataset from Kaggle:
-  `kaggle datasets download thoughtvector/customer-support-on-twitter`
-  and place the extracted `twcs/twcs.csv` at the project root under `twcs/`.
+To reproduce this project:
+
+```bash
+# Download from Kaggle
+kaggle datasets download thoughtvector/customer-support-on-twitter
+# Unzip and place the file at:
+#   twcs/twcs.csv
+```
+
+The `.gitignore` excludes all raw data, ZIP archives, and CSV files.
 
 ---
 
 ## Development Principles
 
-This project is developed according to the following engineering principles:
-
-- **Reproducibility**: Every result must be reproducible from the committed code and a fresh dataset download.
-- **Explainability**: Every implementation decision is explained in `docs/decision_log.md`.
-- **No fabricated metrics**: No accuracy score, F1-score, retrieval quality, or evaluation result is reported until it is actually measured.
-- **Incremental implementation**: Components are built and verified one phase at a time.
-- **Privacy and secret management**: API keys and credentials are stored in a local `.env` file, never committed.
-- **Minimal dependencies**: Only packages genuinely needed for each phase are added.
+- **Reproducibility** — Every result is reproducible from committed code plus a fresh dataset download.
+- **Explainability** — Every engineering decision is recorded in `docs/decision_log.md`.
+- **No fabricated metrics** — No accuracy, F1, or evaluation result is reported until actually measured.
+- **Incremental implementation** — Components are built and verified one phase at a time.
+- **Secret management** — API keys are stored in a local `.env` file; never committed.
+- **Interface independence** — Core pipeline logic is separate from any future web interface.
+- **Minimal dependencies** — Only packages needed for the current phase are included.
 
 ---
 
-## Setup Instructions
-
-> ⚠️ **This section will be completed after the development environment is verified in Phase 1.**
-
-The following steps are placeholders and will be updated with exact, tested commands.
+## Setup
 
 ```bash
-# 1. Clone the repository
+# 1. Clone
 git clone https://github.com/mohanraj9342/ai-customer-agent.git
 cd ai-customer-agent
 
-# 2. Create and activate a virtual environment (Python 3.11+)
+# 2. Create virtual environment
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
 
 # 3. Install dependencies
 pip install -r requirements.txt
 
 # 4. Place the dataset
-# Download twcs.csv from Kaggle and place it at:
-#   twcs/twcs.csv
+#    Download twcs.csv from Kaggle and save it to:
+#      twcs/twcs.csv
 
-# 5. Configure API keys (when needed in later phases)
+# 5. Configure API keys (required in later phases only)
 cp .env.example .env
-# Edit .env and fill in your API key(s)
+# Edit .env and add your key(s)
+
+# 6. Run tests
+pytest -q
+
+# 7. Run dataset inspection
+python -m src.data.inspect_dataset
 ```
 
 ---
@@ -125,20 +134,20 @@ cp .env.example .env
 ## Repository Structure
 
 ```
-hiver-ai-support-agent/
+ai-customer-agent/
 ├── data/
-│   ├── raw/            # Brand-filtered, cleaned source data (gitignored)
-│   └── processed/      # Labelled intents, train/dev/test splits (gitignored)
+│   ├── raw/            # Brand-filtered source data (gitignored)
+│   └── processed/      # Cleaned data, splits, index artifacts (gitignored)
 ├── notebooks/          # Exploratory analysis notebooks
 ├── src/
-│   ├── data/           # Data ingestion, filtering, cleaning scripts
-│   ├── classification/ # Intent classifier (baseline + main)
+│   ├── data/           # Ingestion, filtering, reconstruction scripts
+│   ├── classification/ # Intent classifier and taxonomy
 │   ├── retrieval/      # Similarity index and retrieval engine
 │   ├── generation/     # LLM-based reply generation
 │   └── evaluation/     # Metrics, LLM judge, human agreement
 ├── tests/              # Unit and integration tests (pytest)
-├── docs/               # Report, decision log, architecture diagrams
-├── .env.example        # Template for API keys (safe to commit)
+├── docs/               # Decision log, brand selection, architecture notes
+├── .env.example        # API key template (safe to commit)
 ├── .gitignore
 ├── README.md
 └── requirements.txt
@@ -146,7 +155,6 @@ hiver-ai-support-agent/
 
 ---
 
-## Contact
+## Author
 
-**Candidate:** Mohanraj
-**Repository:** https://github.com/mohanraj9342/ai-customer-agent
+**Mohanraj** — [github.com/mohanraj9342](https://github.com/mohanraj9342)
