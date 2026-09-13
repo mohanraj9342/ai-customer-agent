@@ -1,0 +1,51 @@
+# =============================================================================
+# requirements.txt — Hiver AI Customer Support Agent
+# =============================================================================
+# Phase 0: Minimal dependencies for project scaffolding and initial data
+# inspection only.
+#
+# These packages are either already installed in the project virtual environment
+# or are small, safe additions needed for Phase 1 (dataset inspection).
+#
+# Packages NOT yet included (will be added in later phases, pending approval):
+#   - sentence-transformers   (Phase 4 — main classifier)
+#   - faiss-cpu               (Phase 5 — retrieval index)
+#   - openai / google-generativeai  (Phase 6 — reply generation, needs approval)
+#   - torch / transformers    (not needed; sentence-transformers uses ONNX/numpy)
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Data handling — already installed in .venv
+# ---------------------------------------------------------------------------
+pandas>=2.0
+numpy>=1.24
+scipy>=1.10
+
+# ---------------------------------------------------------------------------
+# Machine learning — already installed in .venv
+# ---------------------------------------------------------------------------
+scikit-learn>=1.3
+joblib>=1.3
+
+# ---------------------------------------------------------------------------
+# Progress bars — small, no side effects
+# Not yet installed; used in data loading loops
+# ---------------------------------------------------------------------------
+tqdm>=4.66
+
+# ---------------------------------------------------------------------------
+# Environment / secrets management
+# Loads .env files so API keys stay out of source code
+# Not yet installed; needed from Phase 6 onward but good practice to add now
+# ---------------------------------------------------------------------------
+python-dotenv>=1.0
+
+# ---------------------------------------------------------------------------
+# HTTP requests — already installed in .venv
+# ---------------------------------------------------------------------------
+requests>=2.31
+
+# ---------------------------------------------------------------------------
+# Testing — already installed (pytest is not in the venv yet, will install)
+# ---------------------------------------------------------------------------
+pytest>=8.0
