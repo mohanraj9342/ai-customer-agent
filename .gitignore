@@ -56,8 +56,13 @@ archive.zip
 *.jsonl
 *.feather
 
-# EXCEPTION: small reference files committed intentionally
-# (override with: git add -f path/to/small_file.csv)
+# EXCEPTION: small summary/report files inside docs/ are safe to commit.
+# These are tiny generated reports (< a few KB), not raw data.
+!docs/*.csv
+!docs/*.json
+
+# EXCEPTION: override any other specific small file with:
+# (git add -f path/to/small_file.csv)
 
 # ---------------------------------------------------------------------------
 # Generated model files and serialized artifacts
