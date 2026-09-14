@@ -368,3 +368,43 @@ calibration and inter-rater agreement measurement rather than natural test
 distribution evaluation.
 
 ---
+
+## Decision 16: Human pilot annotation completion (158 records), adjudication error analysis, and operational precedence validation
+
+**Decision:** Complete manual adjudication of all 158 records in the pilot dataset
+(`data/processed/apple_support/apple_support_intent_pilot_sample.csv`) following
+Taxonomy Version 2.0 and the standardized guidelines in
+`docs/apple_support_intent_annotation_guide.md`. Verify 76 records (48.10%),
+correct 79 records (50.00%), and preserve 3 records (1.90%) as `flagged_ambiguous`
+(`needs_review`) for supervisory escalation. Populate 100% of review metadata fields
+(`verified_intent`, `verification_status`, `verified_by`, `verification_date`, `notes`)
+with zero missing values and zero data leakage.
+
+**Alternatives considered:**
+1. *Forcing resolution on all 158 records into 11 concrete classes without allowing `flagged_ambiguous`:*
+   Rejected because genuine microblogging multi-intent cases (e.g., physical hardware repair
+   damage combined with a £3,250 refund dispute, or co-equal simultaneous battery death and
+   complete cellular/network failure) cannot be resolved without supervisor adjudication
+   or conversational clarification; forcing a single class would introduce arbitrary label noise.
+2. *Relying on brand replies or conversation turns for intent resolution:*
+   Strictly rejected because evaluating conversational outcomes or brand agent actions introduces
+   data leakage; front-line triage models must operate exclusively on the customer's initial
+   inbound formulation.
+3. *Automated post-hoc heuristic correction of preliminary labels:* Rejected because human
+   verification provides rigorous, audited ground-truth labels needed to benchmark both
+   heuristic rules and subsequent supervised models.
+
+**Reason:** The pilot adjudication confirmed that hierarchical precedence rules
+(Safety > Security/Financial > Actionable Symptom > Historical Attribution) effectively
+resolve 86.96% (20/23) of multi-category rule conflicts. The empirical agreement rate of
+49.37% demonstrates that the preliminary heuristic rules struggle on collision boundaries
+(e.g., App Store app downloads and billing method updates labeled as `software_update`,
+actionable post-update battery drain assigned to `software_update`, and actionable native app
+failures falling into `unknown_other`). Completing this audited pilot proves guideline
+soundness, measures baseline error modes, and establishes a validated protocol for
+scaling human annotation across the full 1,874-record review dataset.
+
+**Trade-offs accepted:** Due to heavy oversampling of edge cases and conflict strata in the
+pilot design, the observed preliminary rule agreement rate (49.37%) is substantially lower
+than natural distribution accuracy. This is intentional and necessary for stress-testing
+guidelines against worst-case boundary ambiguities.

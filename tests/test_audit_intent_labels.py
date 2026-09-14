@@ -384,3 +384,85 @@ class TestAnnotationGuideAndDocIntegrity:
             assert "file://" not in content, f"Forbidden local file:// link found in {md_file}"
             assert "/home/" not in content, f"Forbidden absolute path found in {md_file}"
 
+
+class TestAnnotatedPilotSample:
+    """Validate the fully annotated pilot dataset artifact."""
+
+    @pytest.fixture
+    def pilot_paths(self):
+        root = Path(__file__).resolve().parent.parent
+        csv_path = root / "data" / "processed" / "apple_support" / "apple_support_intent_pilot_sample.csv"
+        meta_path = root / "data" / "processed" / "apple_support" / "apple_support_intent_pilot_metadata.json"
+        return csv_path, meta_path
+
+    def test_annotated_pilot_csv_and_metadata_exist(self, pilot_paths):
+        csv_path, meta_path = pilot_paths
+        if not csv_path.exists() or not meta_path.exists():
+            pytest.skip("Pilot dataset artifacts not present locally.")
+
+        df = pd.read_csv(csv_path)
+        assert len(df) == 158
+        assert df["tweet_id"].nunique() == 158
+        assert df["thread_id"].nunique() == 158
+
+    def test_annotated_pilot_review_fields_complete(self, pilot_paths):
+        csv_path, _ = pilot_paths
+        if not csv_path.exists():
+            pytest.skip("Pilot dataset artifact not present locally.")
+
+        df = pd.read_csv(csv_path)
+        required_cols = [
+            "verified_intent",
+            "verification_status",
+            "verified_by",
+            "verification_date",
+            "notes",
+        ]
+        for col in required_cols:
+            assert col in df.columns
+            assert df[col].notna().all(), f"Null values found in {col}"
+            assert (df[col].astype(str).str.strip() != "").all(), f"Empty string values found in {col}"
+
+    def test_annotated_pilot_statuses_and_intents_valid(self, pilot_paths):
+        from src.classification.prepare_intent_dataset import VALID_INTENTS
+
+        csv_path, _ = pilot_paths
+        if not csv_path.exists():
+            pytest.skip("Pilot dataset artifact not present locally.")
+
+        df = pd.read_csv(csv_path)
+        valid_statuses = {"verified", "corrected", "flagged_ambiguous"}
+        valid_intents = set(VALID_INTENTS) | {"unknown_other", "needs_review"}
+
+        assert set(df["verification_status"]).issubset(valid_statuses)
+        assert set(df["verified_intent"]).issubset(valid_intents)
+
+        # Flagged ambiguous must have verified_intent == 'needs_review'
+        flagged = df[df["verification_status"] == "flagged_ambiguous"]
+        assert len(flagged) > 0
+        assert (flagged["verified_intent"] == "needs_review").all()
+
+        # Corrected must have different verified_intent than preliminary_intent
+        corrected = df[df["verification_status"] == "corrected"]
+        assert len(corrected) > 0
+        assert (corrected["verified_intent"] != corrected["preliminary_intent"]).all()
+
+    def test_annotated_pilot_metadata_consistency(self, pilot_paths):
+        csv_path, meta_path = pilot_paths
+        if not csv_path.exists() or not meta_path.exists():
+            pytest.skip("Pilot dataset artifacts not present locally.")
+
+        df = pd.read_csv(csv_path)
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+
+        assert meta["annotation_status"] == "completed"
+        assert meta["total_annotated_records"] == len(df)
+        assert meta["counts_by_verification_status"] == df["verification_status"].value_counts().to_dict()
+        assert meta["counts_by_verified_intent"] == df["verified_intent"].value_counts().to_dict()
+
+        # Check content SHA-256
+        with open(csv_path, "rb") as f:
+            computed_sha = hashlib.sha256(f.read()).hexdigest()
+        assert meta["deterministic_content_sha256"] == computed_sha
+

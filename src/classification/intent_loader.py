@@ -4,7 +4,7 @@ src/classification/intent_loader.py
 Load and validate the intent taxonomy from intents.yaml.
 
 This module is the single source of truth for intent configuration.
-All other components (classifier, evaluator, labelling tools) should
+All other components (classifier, evaluation pipelines, labelling tools) should
 import intents through this module rather than reading the YAML directly.
 
 USAGE
