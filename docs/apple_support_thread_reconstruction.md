@@ -129,14 +129,15 @@ The list of reconstructed threads is deterministically sorted by `root_tweet_id`
 
 To prevent misleading evaluation results, every metric explicitly defines its numerator and denominator:
 
-| Metric Name | Numerator | Denominator | Description |
-| :--- | :--- | :--- | :--- |
-| **`pct_valid_parent_links`** | Parent links whose target exists in dataset | Messages with non-empty `in_response_to_tweet_id` | Measures how often a declared parent actually exists in the corpus. |
-| **`pct_valid_response_ids`** | Response targets existing in dataset | Total individual IDs listed in `response_tweet_id` | Measures how often referenced reply IDs actually exist. |
-| **`pct_three_plus_messages`** | Threads with $\ge 3$ messages | Total reconstructed threads | Captures conversations beyond brief single interactions. |
-| **`pct_multiple_exchanges`** | Threads with $\ge 2$ customer AND $\ge 2$ brand messages | Total reconstructed threads | Strict measure of genuine back-and-forth dialog. |
-| **`pct_complete_threads`** | Threads ending with an outbound (brand) response | Total reconstructed threads | Conventional heuristic indicating the brand had the last word. |
-| **`pct_broken_link_threads`** | Threads missing parents or reply targets | Total reconstructed threads | Proportion of threads with missing conversational context. |
+| Metric Name | Numerator | Denominator | Value | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **`pct_valid_parent_links`** | Parent links whose target exists in dataset (131,378) | Messages with non-empty `in_response_to_tweet_id` (138,729) | **94.7%** | Measures how often a declared parent actually exists in the corpus (`131,378 / (131,378 + 7,351)`). |
+| **`pct_valid_response_ids`** | Response targets existing in dataset (131,378) | Total individual IDs listed in `response_tweet_id` (157,589) | **83.4%** | Measures how often referenced reply IDs actually exist (`131,378 / (131,378 + 26,211)`). |
+| **`pct_three_plus_messages`** | Threads with $\ge 3$ messages (17,359) | Total reconstructed threads (82,105) | **21.1%** | Captures conversations beyond brief single interactions. |
+| **`pct_multiple_exchanges`** | Threads with $\ge 2$ customer AND $\ge 2$ brand messages (17,232) | Total reconstructed threads (82,105) | **21.0%** | Strict measure of genuine back-and-forth dialog ($\ge 4$ turns). |
+| **`pct_ends_with_brand_reply`** | Threads ending with an outbound (brand) response (82,105) | Total reconstructed threads (82,105) | **100.0%** | **EXTRACTION-DEPENDENT STRUCTURAL ARTIFACT:** 100% of threads end with brand because Phase 3 only extracted customer tweets that were replied to by AppleSupport. It is NOT proof of true customer issue resolution. |
+| **`pct_broken_parent_threads`** | Threads with $\ge 1$ missing parent link (7,351) | Total reconstructed threads (82,105) | **8.95%** | Proportion of threads where the conversation starts mid-dialogue due to unextracted parent tweets. |
+| **`pct_missing_response_threads`**| Threads with $\ge 1$ missing response target (16,406) | Total reconstructed threads (82,105) | **19.98%** | Proportion of threads where referenced reply tweets exist on Twitter but are absent from the dataset. |
 
 ### 5.1 Multiple-Exchange Definition
 A thread is categorized as `has_multiple_exchanges` if and only if:
@@ -180,11 +181,18 @@ The reconstruction pipeline is executed via `src/data/reconstruct_threads.py`:
 
 ---
 
-## 7. Known Limitations
+## 7. Known Limitations & Audit Findings
 
-1. **Twitter API Extract Window Truncation:** Many customer inquiries reference parent tweets that occurred prior to the start of the extraction window, or reply to tweets deleted by users. These appear as missing parent links.
-2. **Branching Conversations:** When a brand responds to a customer with multiple alternative options, or when customers reply multiple times, trees branch into multi-path graphs. BFS linearizes these branches chronologically.
-3. **Private Direct Messages (DM):** Many public support interactions conclude with "Please DM us your serial number." In the public dataset, the private resolution is absent. Downstream escalation and resolution models must treat DM redirection as a specific conversation terminal state.
+1. **Extraction-Dependent Final-Brand Bias:**
+   `100% of threads end with a brand message` is a direct consequence of the Phase 3 extraction filter. Phase 3 collected messages authored by AppleSupport and customer messages that AppleSupport replied to. Any customer tweet that AppleSupport did NOT reply to was excluded. Consequently, every leaf in the extracted conversation graph terminates at a brand reply by construction. Furthermore, **8,848 final brand messages (10.8% of threads)** declare outgoing `response_tweet_id` links referencing 9,717 subsequent customer tweets that were never captured. This metric must never be interpreted as complete problem resolution.
+2. **Message Conservation:**
+   Verification confirmed exact conservation: all 213,483 rows in `apple_support_messages.csv` are accounted for across the 82,105 threads. Exactly 0 messages were dropped, 0 messages were duplicated, and 0 messages appear in multiple threads.
+3. **Twitter API Extract Window Truncation:**
+   7,351 parent links point to tweets created outside the Kaggle dataset's time window or since deleted. These conversations start mid-dialogue at the first captured turn.
+4. **Branching Conversations:**
+   When a brand responds to a customer with multiple alternative options, or when customers reply multiple times, trees branch into multi-path graphs. BFS linearizes these branches chronologically.
+5. **Private Direct Messages (DM):**
+   Many public support interactions conclude with "Please DM us your serial number." In the public dataset, the private resolution is absent. Downstream escalation and resolution models must treat DM redirection as a specific conversation terminal state.
 
 ---
 

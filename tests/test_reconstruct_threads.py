@@ -1102,3 +1102,168 @@ class TestPhase3CSVCompatibility:
         csv_path = _write_csv(tmp_path / "msgs.csv", _four_turn_rows())
         meta = run_reconstruction(input_path=csv_path, output_dir=tmp_path / "out")
         assert meta["total_threads"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 43. Audit Regression: Extraction-Dependent Final-Brand Metric
+# ---------------------------------------------------------------------------
+class TestAuditFinalBrandMetric:
+    def test_brand_final_message_has_flags(self):
+        threads = reconstruct_threads(_make_df(_two_turn_rows()))
+        assert threads[0].ends_with_brand_reply is True
+        assert threads[0].is_complete is True
+
+    def test_customer_final_message_has_flags(self):
+        rows = [
+            {"tweet_id": "1", "inbound": "True", "created_at": "Tue Oct 31 10:00:00 +0000 2017",
+             "text": "Help", "response_tweet_id": "2", "in_response_to_tweet_id": ""},
+            {"tweet_id": "2", "inbound": "False", "created_at": "Tue Oct 31 10:05:00 +0000 2017",
+             "text": "Reboot", "response_tweet_id": "3", "in_response_to_tweet_id": "1"},
+            {"tweet_id": "3", "inbound": "True", "created_at": "Tue Oct 31 10:10:00 +0000 2017",
+             "text": "Still broken", "response_tweet_id": "", "in_response_to_tweet_id": "2"},
+        ]
+        threads = reconstruct_threads(_make_df(rows))
+        assert threads[0].ends_with_brand_reply is False
+        assert threads[0].is_complete is False
+
+    def test_brand_final_with_unextracted_response_target(self):
+        # Final brand message points to an unextracted tweet 999
+        rows = [
+            {"tweet_id": "1", "inbound": "True", "in_response_to_tweet_id": "",
+             "response_tweet_id": "2", "text": "Help", "created_at": "Tue Oct 31 10:00:00 +0000 2017"},
+            {"tweet_id": "2", "inbound": "False", "in_response_to_tweet_id": "1",
+             "response_tweet_id": "999", "text": "Try rebooting", "created_at": "Tue Oct 31 10:05:00 +0000 2017"},
+        ]
+        threads = reconstruct_threads(_make_df(rows))
+        t = threads[0]
+        assert t.ends_with_brand_reply is True
+        assert t.is_complete is True
+        # Even though it ends with brand, downstream tweet 999 was not extracted!
+        assert t.response_links_missing == 1
+        assert "missing_response_target" in t.quality_flags
+
+
+# ---------------------------------------------------------------------------
+# 44. Audit Regression: Response Denominator Reconciliation
+# ---------------------------------------------------------------------------
+class TestAuditResponseDenominatorReconciliation:
+    def test_multiple_response_ids_reconciliation(self, tmp_path):
+        rows = [
+            {"tweet_id": "1", "inbound": "True", "in_response_to_tweet_id": "",
+             "response_tweet_id": "2, 3, 999", "text": "q", "created_at": "Tue Oct 31 10:00:00 +0000 2017"},
+            {"tweet_id": "2", "inbound": "False", "in_response_to_tweet_id": "1",
+             "response_tweet_id": "", "text": "a1", "created_at": "Tue Oct 31 10:01:00 +0000 2017"},
+            {"tweet_id": "3", "inbound": "False", "in_response_to_tweet_id": "1",
+             "response_tweet_id": "", "text": "a2", "created_at": "Tue Oct 31 10:02:00 +0000 2017"},
+        ]
+        csv_path = _write_csv(tmp_path / "msgs.csv", rows)
+        meta = run_reconstruction(input_path=csv_path, output_dir=tmp_path / "out")
+        lm = meta["link_metrics"]
+        assert lm["messages_with_response_link"] == 1
+        assert lm["response_link_ids_valid"] == 2
+        assert lm["response_link_ids_missing"] == 1
+        assert lm["total_individual_response_ids"] == 3
+        # valid + missing == total
+        assert lm["response_link_ids_valid"] + lm["response_link_ids_missing"] == lm["total_individual_response_ids"]
+        # percentage: 2 / 3 = 66.7%
+        assert lm["pct_valid_response_ids"] == 66.7
+
+    def test_empty_response_fields_excluded_from_denominator(self, tmp_path):
+        rows = [
+            {"tweet_id": "1", "inbound": "True", "in_response_to_tweet_id": "",
+             "response_tweet_id": "", "text": "q", "created_at": "Tue Oct 31 10:00:00 +0000 2017"},
+            {"tweet_id": "2", "inbound": "False", "in_response_to_tweet_id": "1",
+             "response_tweet_id": "nan", "text": "a", "created_at": "Tue Oct 31 10:01:00 +0000 2017"},
+        ]
+        csv_path = _write_csv(tmp_path / "msgs.csv", rows)
+        meta = run_reconstruction(input_path=csv_path, output_dir=tmp_path / "out")
+        lm = meta["link_metrics"]
+        assert lm["messages_with_response_link"] == 0
+        assert lm["total_individual_response_ids"] == 0
+        assert lm["pct_valid_response_ids"] is None
+
+
+# ---------------------------------------------------------------------------
+# 45. Audit Regression: Parent Denominator Reconciliation
+# ---------------------------------------------------------------------------
+class TestAuditParentDenominatorReconciliation:
+    def test_parent_denominator_reconciliation(self, tmp_path):
+        rows = [
+            {"tweet_id": "1", "inbound": "True", "in_response_to_tweet_id": "",
+             "response_tweet_id": "2", "text": "q", "created_at": "Tue Oct 31 10:00:00 +0000 2017"},
+            {"tweet_id": "2", "inbound": "False", "in_response_to_tweet_id": "1",
+             "response_tweet_id": "3", "text": "a", "created_at": "Tue Oct 31 10:01:00 +0000 2017"},
+            {"tweet_id": "3", "inbound": "True", "in_response_to_tweet_id": "999",  # missing parent
+             "response_tweet_id": "", "text": "followup", "created_at": "Tue Oct 31 10:02:00 +0000 2017"},
+        ]
+        csv_path = _write_csv(tmp_path / "msgs.csv", rows)
+        meta = run_reconstruction(input_path=csv_path, output_dir=tmp_path / "out")
+        lm = meta["link_metrics"]
+        assert lm["messages_with_parent_link"] == 2
+        assert lm["parent_links_valid"] == 1
+        assert lm["parent_links_missing"] == 1
+        assert lm["parent_links_valid"] + lm["parent_links_missing"] == lm["messages_with_parent_link"]
+        assert lm["pct_valid_parent_links"] == 50.0
+
+
+# ---------------------------------------------------------------------------
+# 46. Audit Regression: Conservation and No Duplicate Thread Assignment
+# ---------------------------------------------------------------------------
+class TestAuditThreadConservation:
+    def test_message_conservation_and_uniqueness(self):
+        # 3 independent trees + 1 branched tree
+        rows = [
+            {"tweet_id": "1", "inbound": "True", "in_response_to_tweet_id": "",
+             "text": "t1_m1", "created_at": "Tue Oct 31 10:00:00 +0000 2017"},
+            {"tweet_id": "2", "inbound": "False", "in_response_to_tweet_id": "1",
+             "text": "t1_m2", "created_at": "Tue Oct 31 10:01:00 +0000 2017"},
+            {"tweet_id": "3", "inbound": "False", "in_response_to_tweet_id": "1",
+             "text": "t1_m3", "created_at": "Tue Oct 31 10:02:00 +0000 2017"},
+            {"tweet_id": "10", "inbound": "True", "in_response_to_tweet_id": "",
+             "text": "t2_m1", "created_at": "Tue Oct 31 10:00:00 +0000 2017"},
+            {"tweet_id": "11", "inbound": "False", "in_response_to_tweet_id": "10",
+             "text": "t2_m2", "created_at": "Tue Oct 31 10:01:00 +0000 2017"},
+        ]
+        threads = reconstruct_threads(_make_df(rows))
+        all_tids_in_threads = []
+        for t in threads:
+            all_tids_in_threads.extend(t.tweet_ids)
+
+        # Conservation: exactly 5 messages
+        assert len(all_tids_in_threads) == len(rows)
+        # Uniqueness: every ID appears exactly once
+        assert set(all_tids_in_threads) == {"1", "2", "3", "10", "11"}
+        assert len(set(all_tids_in_threads)) == len(rows)
+
+
+# ---------------------------------------------------------------------------
+# 47. Audit Regression: Missing-Parent vs Missing-Response Distinction
+# ---------------------------------------------------------------------------
+class TestAuditMissingLinkDistinction:
+    def test_missing_parent_only(self):
+        # Tweet 2 has missing parent 999, but no missing response
+        rows = [
+            {"tweet_id": "2", "inbound": "False", "in_response_to_tweet_id": "999",
+             "response_tweet_id": "", "text": "reply", "created_at": "Tue Oct 31 10:00:00 +0000 2017"},
+        ]
+        threads = reconstruct_threads(_make_df(rows))
+        t = threads[0]
+        assert t.has_broken_links is True
+        assert t.parent_links_missing == 1
+        assert t.response_links_missing == 0
+        assert "missing_parent_link" in t.quality_flags
+        assert "missing_response_target" not in t.quality_flags
+
+    def test_missing_response_only(self):
+        # Tweet 1 has valid parent (none), but missing response 888
+        rows = [
+            {"tweet_id": "1", "inbound": "True", "in_response_to_tweet_id": "",
+             "response_tweet_id": "888", "text": "question", "created_at": "Tue Oct 31 10:00:00 +0000 2017"},
+        ]
+        threads = reconstruct_threads(_make_df(rows))
+        t = threads[0]
+        assert t.has_broken_links is False
+        assert t.parent_links_missing == 0
+        assert t.response_links_missing == 1
+        assert "missing_parent_link" not in t.quality_flags
+        assert "missing_response_target" in t.quality_flags

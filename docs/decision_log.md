@@ -228,3 +228,33 @@ ensure reliable quality evaluation for downstream retrieval and generation.
 **Trade-offs accepted:** Unconnected single messages and broken parent chains
 are preserved as flagged components rather than silently discarded or
 stitched heuristically.
+
+---
+
+## Decision 12: Demarcate extraction-dependent final-brand metric and audit link reconciliations
+
+**Decision:** The metric previously labeled as "100% complete threads" is
+aliased to `ends_with_brand_reply` and explicitly flagged in metadata as
+`extraction_dependent_final_brand: true`. It must not be interpreted as
+customer resolution or dialogue closure. Response-link metrics explicitly
+reconcile `total_individual_response_ids = valid + missing`.
+
+**Alternatives considered:** Maintaining the unqualified label "complete";
+omitting threads that have unextracted reply IDs; attempting heuristic
+resolution classification based on text.
+
+**Reason:** In Phase 3, customer tweets were collected only if AppleSupport
+replied to them. By construction, every leaf in the extracted conversation
+graph terminates at a brand message. An audit revealed that 8,848 final brand
+messages (10.8% of threads) have outgoing `response_tweet_id` links pointing
+to 9,717 subsequent customer tweets on Twitter that were never extracted
+because AppleSupport did not reply again. Conflating "terminates at brand reply"
+with "conversation is complete" is structurally misleading. Explicitly
+flagging extraction bias ensures downstream intent classification and
+retrieval models do not assume dialogue termination.
+
+**Trade-offs accepted:** Retaining the legacy `is_complete` key alongside
+`ends_with_brand_reply` maintains backward compatibility with existing
+callers while clarifying semantic limitations.
+
+---

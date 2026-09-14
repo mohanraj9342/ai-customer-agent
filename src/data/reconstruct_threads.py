@@ -180,8 +180,9 @@ class Thread:
     directions:       list[str] = field(default_factory=list)
     timestamps:       list[str] = field(default_factory=list)
     turn_count:       int  = 0
-    is_complete:      bool = False
-    has_broken_links: bool = False
+    is_complete:           bool = False
+    ends_with_brand_reply: bool = False
+    has_broken_links:      bool = False
 
     # ---- Phase 4 fields ----
     thread_id:              str       = ""
@@ -227,6 +228,23 @@ class Thread:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+_TS_FORMAT = "%a %b %d %H:%M:%S %z %Y"
+
+
+def _parse_ts(ts: str | None) -> float:
+    """Parse created_at string to float timestamp safely and quickly."""
+    if not ts or not isinstance(ts, str) or str(ts).strip().lower() in ("", "nan"):
+        return float("inf")
+    ts_str = str(ts).strip()
+    try:
+        return datetime.strptime(ts_str, _TS_FORMAT).timestamp()
+    except Exception:
+        try:
+            return pd.to_datetime(ts_str, utc=True).timestamp()
+        except Exception:
+            return float("inf")
+
+
 def _parse_response_ids(raw: str | None) -> list[str]:
     """
     Parse the response_tweet_id field, which can be:
@@ -253,7 +271,8 @@ def _detect_duplicates(df: pd.DataFrame) -> tuple[set[str], set[str]]:
     duplicate_ids: set[str] = set()
     conflict_ids: set[str] = set()
 
-    for _, row in df.iterrows():
+    records = df.to_dict("records")
+    for row in records:
         tid = str(row.get("tweet_id", "")).strip()
         if not tid or tid.lower() == "nan":
             continue
@@ -264,7 +283,7 @@ def _detect_duplicates(df: pd.DataFrame) -> tuple[set[str], set[str]]:
                     str(row.get("author_id", "")) != str(prev.get("author_id", ""))):
                 conflict_ids.add(tid)
         else:
-            seen[tid] = row.to_dict()
+            seen[tid] = row
     return duplicate_ids, conflict_ids
 
 
@@ -283,7 +302,8 @@ def _build_lookup_tables(df: pd.DataFrame) -> tuple[dict, dict, dict]:
     child_to_parent: dict[str, Optional[str]] = {}
     parent_to_children: dict[str, list[str]] = {}
 
-    for _, row in df.iterrows():
+    records = df.to_dict("records")
+    for row in records:
         tid = str(row["tweet_id"]).strip()
         parent = row.get("in_response_to_tweet_id", None)
         parent_str = (
@@ -295,7 +315,7 @@ def _build_lookup_tables(df: pd.DataFrame) -> tuple[dict, dict, dict]:
         if tid in id_to_row:
             continue   # keep first occurrence; duplicate already logged
 
-        id_to_row[tid] = row.to_dict()
+        id_to_row[tid] = row
         child_to_parent[tid] = parent_str
 
         if parent_str:
@@ -366,16 +386,13 @@ def _walk_thread(
             root_tweet_id=root_id,
             has_broken_links=True,
             cycle_detected=cycle_detected,
+            ends_with_brand_reply=False,
         )
 
     # Sort chronologically; tweet_id is the tie-breaker for determinism
     def _sort_key(r: dict) -> tuple:
         ts = r.get("created_at", "")
-        try:
-            dt = pd.to_datetime(ts, utc=True)
-            return (dt.timestamp(), str(r.get("tweet_id", "")))
-        except Exception:
-            return (float("inf"), str(r.get("tweet_id", "")))
+        return (_parse_ts(ts), str(r.get("tweet_id", "")))
 
     collected.sort(key=_sort_key)
 
@@ -390,7 +407,8 @@ def _walk_thread(
     timestamps = [str(r.get("created_at", "")) for r in collected]
 
     last_direction = directions[-1] if directions else "outbound"
-    is_complete    = last_direction == "outbound"
+    ends_with_brand = last_direction == "outbound"
+    is_complete    = ends_with_brand
 
     return Thread(
         root_tweet_id=root_id,
@@ -400,6 +418,7 @@ def _walk_thread(
         timestamps=timestamps,
         turn_count=len(collected),
         is_complete=is_complete,
+        ends_with_brand_reply=ends_with_brand,
         has_broken_links=has_broken_links,
         cycle_detected=cycle_detected,
     )
@@ -483,9 +502,7 @@ def _enrich_thread(
         # Malformed timestamp
         ts = str(row.get("created_at", "") or "").strip()
         if ts and ts.lower() != "nan":
-            try:
-                pd.to_datetime(ts, utc=True)
-            except Exception:
+            if _parse_ts(ts) == float("inf"):
                 mal_ts += 1
         else:
             mal_ts += 1   # missing timestamp is also flagged
@@ -676,6 +693,7 @@ def summarise_threads(threads: list[Thread]) -> dict:
         "multi_turn":     sum(1 for t in threads if t.turn_count > 1),
         "complete":       sum(1 for t in threads if t.is_complete),
         "incomplete":     sum(1 for t in threads if not t.is_complete),
+        "ends_with_brand_reply": sum(1 for t in threads if t.ends_with_brand_reply),
         "broken_links":   sum(1 for t in threads if t.has_broken_links),
         "avg_turns":      round(sum(turn_counts) / len(turn_counts), 2),
         "max_turns":      max(turn_counts),
@@ -726,6 +744,7 @@ def thread_to_dict(thread: Thread) -> dict:
         "end_timestamp":          thread.end_timestamp,
         # Quality flags
         "is_complete":            thread.is_complete,
+        "ends_with_brand_reply":  thread.ends_with_brand_reply,
         "has_both_directions":    thread.has_both_directions,
         "has_3plus_messages":     thread.has_3plus_messages,
         "has_multiple_exchanges": thread.has_multiple_exchanges,
@@ -784,16 +803,17 @@ def _corpus_link_metrics(threads: list[Thread]) -> dict:
         "pct_valid_parent_links":             (
             round(100 * p_valid / p_present, 1) if p_present else None
         ),
-        "denominator_valid_parent_pct":       "messages_with_parent_link",
+        "denominator_valid_parent_pct":       "messages_with_parent_link (parent_links_valid + parent_links_missing)",
         # Response links
         "messages_with_response_link":        r_present,
+        "total_individual_response_ids":      r_valid + r_missing,
         "response_link_ids_valid":            r_valid,
         "response_link_ids_missing":          r_missing,
         "pct_valid_response_ids":             (
             round(100 * r_valid / (r_valid + r_missing), 1)
             if (r_valid + r_missing) > 0 else None
         ),
-        "denominator_valid_response_pct":     "total_individual_response_ids",
+        "denominator_valid_response_pct":     "total_individual_response_ids (response_link_ids_valid + response_link_ids_missing)",
     }
 
 
@@ -854,6 +874,8 @@ def generate_reconstruction_metadata(
             "multi_message_threads":    summary["multi_turn"],
             "complete_threads":         summary["complete"],
             "incomplete_threads":       summary["incomplete"],
+            "ends_with_brand_threads":  summary["ends_with_brand_reply"],
+            "extraction_dependent_final_brand": True,
             "avg_messages_per_thread":  summary["avg_messages_per_thread"],
             "median_messages_per_thread": summary["median_messages_per_thread"],
             "max_messages_per_thread":  summary["max_turns"],
@@ -884,14 +906,16 @@ def generate_reconstruction_metadata(
 
         # Definitions
         "metric_definitions": {
-            "is_complete":            "Last message in chronological order is a brand (outbound) reply.",
+            "ends_with_brand_reply":  "Chronologically last message in thread was authored by brand (outbound).",
+            "is_complete":            "EXTRACTION-DEPENDENT: Equivalent to ends_with_brand_reply. Because Phase 3 only extracted customer tweets that were replied to by the brand, every leaf in the extracted conversation graph terminates at a brand message by construction. This does NOT indicate true customer resolution or satisfaction.",
             "has_both_directions":    "Thread contains ≥1 inbound AND ≥1 outbound message.",
             "has_3plus_messages":     "Thread contains ≥3 messages.",
             "has_multiple_exchanges": "Thread contains ≥2 customer messages AND ≥2 brand messages (≥4 total).",
             "has_broken_links":       "≥1 in_response_to_tweet_id target absent from the dataset.",
             "cycle_detected":         "BFS encountered an already-visited node (includes diamond patterns).",
             "pct_valid_parent_links": "parent_links_valid / messages_with_parent_link × 100",
-            "pct_valid_response_ids": "response_link_ids_valid / total_individual_response_ids × 100",
+            "pct_valid_response_ids": "response_link_ids_valid / (response_link_ids_valid + response_link_ids_missing) × 100",
+            "threads_with_missing_response_target": "Count of threads containing ≥1 message whose response_tweet_id references an ID not found in the dataset (measured at thread level).",
         },
 
         # Performance
@@ -903,9 +927,14 @@ def generate_reconstruction_metadata(
             "missing context from earlier turns cannot be recovered.",
             "cycle_detected covers both true parent-link cycles and diamond-shaped "
             "graphs; it is a conservative flag.",
-            "is_complete (last message is brand reply) is a necessary but NOT "
-            "sufficient condition for a resolved conversation.",
-            "has_multiple_exchanges requires ≥2 customer AND ≥2 brand messages; "
+            "ends_with_brand_threads / is_complete is 100% in this dataset as a "
+            "direct consequence of the Phase 3 extraction filter, which collected "
+            "customer tweets only when replied to by AppleSupport. It is an "
+            "extraction-dependent structural property, NOT proof of genuine conversation "
+            "resolution or customer satisfaction. Indeed, 8,848 final brand messages "
+            "(10.8%) have outgoing response_tweet_ids pointing to subsequent customer "
+            "tweets on Twitter that were not extracted.",
+            "has_multiple_exchanges requires ≥2 customer AND ≥2 brand messages (≥4 total); "
             "a simple customer→brand pair is NOT counted as multi-exchange.",
             "Customer tweets that @mentioned the brand but were not replied to "
             "are absent from the input (unanswered tweet exclusion from Phase 3).",
