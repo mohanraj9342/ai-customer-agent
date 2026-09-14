@@ -335,3 +335,36 @@ domains. Consequently, it represents an active learning / quality audit cohort
 rather than an unstratified natural distribution test benchmark.
 
 ---
+
+## Decision 15: Human-annotation pilot dataset (158 records), empirical keyword collision audit, and standardized annotation guide
+
+**Decision:** Construct a deterministic 158-record pilot annotation dataset
+(`data/processed/apple_support/apple_support_intent_pilot_sample.csv`) using a
+fixed random seed (`seed=42`) and pre-sorting by `tweet_id`. Establish
+standardized operational procedures in `docs/apple_support_intent_annotation_guide.md`
+including hierarchical multi-intent precedence rules (Safety > Financial/Security >
+Actionable Symptom > Attribution). Document empirical collision findings for
+`software_update` (2,142 app download collisions, 484 billing method collisions)
+and mandate pilot calibration (target $\kappa \ge 0.85$) before full-scale human review.
+
+**Alternatives considered:**
+1. *Proceeding directly to full 1,874-sample annotation without a pilot:*
+   Rejected because calibrating annotators on edge cases, smart quote nuances,
+   and multi-intent resolutions is essential to avoid systematic label noise.
+2. *Automated heuristic reassignment of "update" collisions:* Rejected because
+   manually overriding rules with further regex heuristics risks secondary
+   classification noise; human adjudication on prioritized samples provides
+   authentic ground truth.
+
+**Reason:** The quality audit established that standalone uses of "update"
+collide with App Store app downloads (9.34% of `software_update`) and payment
+method updates (2.11%). A calibrated pilot dataset spanning all 11 domains,
+conflict pairs, and edge cases enables annotator alignment and verifies
+guideline clarity prior to annotating the full 1,874-record review sample.
+
+**Trade-offs accepted:** The pilot dataset is intentionally enriched with
+high-risk edge cases and ambiguous collisions; it is designed for annotator
+calibration and inter-rater agreement measurement rather than natural test
+distribution evaluation.
+
+---
