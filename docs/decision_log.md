@@ -258,3 +258,80 @@ retrieval models do not assume dialogue termination.
 callers while clarifying semantic limitations.
 
 ---
+
+## Decision 13: Customer-intent classification unit, empirical taxonomy (v2.0), and conservative heuristic labeling rules
+
+**Decision:** Select the earliest customer message (`inbound == 'True'`) per
+reconstructed thread as the primary classification unit for front-line intent
+routing. Adopt an empirically grounded 11-category domain taxonomy (v2.0)
+defined in `src/classification/intents.yaml`. Implement deterministic lexical
+rules with multi-category conflict detection routing overlapping matches to
+`needs_review` and non-matches to `unknown_other`. Prohibit inspecting agent
+response text or thread-terminal metadata flags (`ends_with_brand_reply`,
+`is_complete`) during intent classification to eliminate data leakage.
+
+**Alternatives considered:**
+1. *Classifying every message across multi-turn threads:* Deferred to turn-level
+   dialogue act modeling; front-line customer agent triage operates on initial
+   inbound contact.
+2. *Forcing single labels via arbitrary rule precedence:* Rejected because
+   forcing a category when multiple domains match (e.g., iOS update causing
+   battery drain) introduces label noise into training pipelines.
+3. *Using brand response text or thread-completion status to infer intent:*
+   Strictly rejected as target leakage, which would artificially inflate model
+   accuracy on historical data while failing on live incoming inquiries.
+
+**Reason:** In front-line customer support, automated agents must determine the
+customer's issue at the point of initial intake. The empirical AppleSupport
+corpus demonstrates that customer inquiries cluster into distinct technical
+concerns (e.g., software updates represent 27.9% of inquiries, distinct from
+physical battery degradation at 4.15%). Preliminary heuristic labels bootstrap
+active learning and annotation workflows but are not ground truth. Flagging
+competing matches as `needs_review` and brief greetings as `unknown_other`
+preserves data integrity and prevents misleading downstream benchmark evaluations.
+
+**Trade-offs accepted:** A large share of candidate inquiries (45.88%) fall
+into `unknown_other` due to Twitter conversational brevity (e.g., "@AppleSupport
+DM me", "help please"). These instances require conversational elicitation
+rather than speculative forced classification.
+
+---
+
+## Decision 14: Deterministic stratified audit sampling, 4-tier review prioritization, and taxonomy retention strategy
+
+**Decision:** Construct a deterministic multi-slice stratified review sample
+(1,874 records) from the 82,101 Phase 5 candidates using a fixed random seed
+(`seed=42`) and canonical pre-sorting by `tweet_id`. Implement a 4-tier human
+review prioritization schema (`critical`: 550 rows, `high`: 793 rows,
+`medium`: 286 rows, `normal`: 245 rows) to concentrate annotation resources on
+rule overlaps and ambiguous high-volume classes. Retain Taxonomy Version 2.0
+unchanged while recommending targeted lexical rule refinements and human
+verification prior to supervised classifier training.
+
+**Alternatives considered:**
+1. *Adding niche taxonomy categories (e.g., retail store appointments, Apple Watch):*
+   Rejected because each cluster accounts for $<1.0\%$ of customer inquiries;
+   adding them prematurely would fragment training data into severely imbalanced
+   micro-classes.
+2. *Forcing resolution on `needs_review` multi-category conflicts via heuristic precedence:*
+   Rejected because over 31% of conflicts represent genuine multi-intent
+   inquiries (e.g., OS update attribution with battery drain symptoms) where
+   ground truth requires human adjudication.
+3. *Simple unstratified random sampling:* Rejected because rare classes such as
+   `order_shipping` (0.25% corpus share) would yield fewer than 5 instances in a
+   random 1,000-sample pool, preventing statistically sound auditing.
+
+**Reason:** Quantitative inspection of the 82,101 candidates confirmed that
+`unknown_other` (45.88%) reflects natural conversational intake characteristics
+(greetings, DM requests, image-only tweets, vague complaints) rather than
+systematic taxonomy omission. The core 11 domains in Taxonomy v2.0 correctly
+map to support routing workflows. Deterministic multi-slice stratification
+ensures reproducible review datasets with verified representation across all
+intents, confidence tiers, and linguistic edge cases.
+
+**Trade-offs accepted:** The review sample (`apple_support_intent_review_sample.csv`)
+is intentionally enriched for edge cases, multi-category conflicts, and rare
+domains. Consequently, it represents an active learning / quality audit cohort
+rather than an unstratified natural distribution test benchmark.
+
+---

@@ -1,190 +1,251 @@
 # intent taxonomy for AppleSupport
 # ============================================================
-# This file defines the intent labels used to classify inbound
-# customer tweets directed at the selected brand.
+# Version: 2.0
+# Selected Brand: AppleSupport
 #
 # Design principles:
-#   - Keep the set small (5-10 labels) to stay tractable for hand-labelling.
-#   - Every intent must be mutually exclusive at the primary level.
-#   - The "other" intent acts as a mandatory catch-all.
-#   - "auto_handle" indicates whether this intent is a candidate for
-#     automatic response without human review.
-#   - "escalation_risk" indicates whether this intent commonly requires
-#     human escalation (billing, safety, legal, account access).
+#   - Grounded in empirical exploration of 82,101 candidate customer tweets.
+#   - Clear definitions with explicit inclusion and exclusion rules to minimize overlap.
+#   - Every intent is mutually exclusive at the primary level.
+#   - The "unknown_other" intent acts as a mandatory fallback.
+#   - "auto_handle": Candidate for automated response or self-service retrieval.
+#   - "escalation_risk": Requires human agent escalation (billing, account lock, physical damage).
 #
-# Evidence basis:
-#   These intents are derived from manual review of actual customer tweets
-#   in the AppleSupport subset.  Topics without sufficient examples were
-#   merged with related categories or placed in "other".
-#
-# File format: YAML list of intent objects.
 # Loading: use src/classification/intent_loader.py
 # ============================================================
 
 intents:
 
-  - name: software_update_issue
+  - name: software_update
     display_name: "Software / OS Update Issue"
     definition: >
       The customer reports a problem that started after, or is directly related
-      to, a software update, iOS version, macOS version, or app update.
-      Includes slow performance, bugs introduced by updates, failed updates,
-      and requests about specific iOS/macOS versions.
+      to, a software update, iOS version, macOS version, or system bug.
+      Includes performance degradation, bugs introduced by updates (e.g. keyboard
+      autocorrect glitches), failed installations, and questions about upcoming bug fixes.
     inclusion_criteria:
-      - Mentions "update", "iOS", "macOS", "High Sierra", "upgrade"
-      - Problem began after installing a software update
-      - Asks whether a bug fix update is coming
+      - Mentions "update", "iOS", "iOS11", "macOS", "High Sierra", "upgrade", "glitch", "bug"
+      - Problem started immediately after installing an update
+      - Asks when an update or patch will be released
     exclusion_criteria:
-      - Hardware damage not related to software (→ device_hardware_issue)
-      - Cannot sign in after update (→ account_access_issue)
+      - Physical hardware defect not caused by software (→ device_hardware)
+      - Battery-only drain complaints without mention of software update (→ battery_power)
+      - Cannot sign in after update (→ account_access)
     auto_handle: true
     escalation_risk: false
     examples:
-      - "this new update jacked up my phone"
-      - "iOS 11 is killing my battery — fix it"
-      - "My MacBook Pro is dead after upgrading to 10.13.1"
+      - "ever since the new iOS 11 update my phone has been freezing constantly"
+      - "why is the letter i turning into an A with a question mark square on my iPhone"
+      - "High Sierra install failed and now my MacBook Pro won't boot"
 
-  - name: battery_performance_issue
-    display_name: "Battery or Performance Issue"
+  - name: battery_power
+    display_name: "Battery, Power & Charging"
     definition: >
-      The customer reports unusually short battery life, rapid battery drain,
-      overheating, device slowness, or poor performance not caused by a
-      specific hardware defect.  Includes requests for battery-related advice.
+      The customer reports battery performance problems, unusually fast battery
+      drain, phone overheating during use or charging, battery percentage jumping,
+      or charging cable / power adapter failure.
     inclusion_criteria:
-      - Mentions "battery", "drain", "slow", "overheating", "performance"
-      - Reports device is sluggish or laggy
-      - Battery percentage dropping unusually fast
+      - Mentions "battery", "drain", "draining", "overheating", "charging", "charger", "percentage"
+      - Battery life dropping drastically in short periods
+      - Device hot to the touch or not charging past a certain percentage
     exclusion_criteria:
-      - Hardware damage (cracked screen, liquid damage) → device_hardware_issue
-      - Update-caused slowdown where update is the primary complaint
-        → software_update_issue
+      - System-wide software glitch where battery is secondary (→ software_update)
+      - Device physically bloated or expanding battery (→ device_hardware)
     auto_handle: true
     escalation_risk: false
     examples:
-      - "my iPhone battery drops from 50% to 14% in less than 2 hours"
-      - "battery drains so fast on iPhone 6 after update"
-      - "my phone overheats when charging"
+      - "my iPhone 7 battery drops from 80% to 20% in an hour without use"
+      - "my phone gets extremely hot whenever I plug it into the charger"
+      - "battery percentage jumps all over the place and shuts down at 30%"
 
-  - name: account_access_issue
-    display_name: "Account / iCloud / Login Issue"
+  - name: device_hardware
+    display_name: "Device Hardware & Physical Damage"
     definition: >
-      The customer cannot sign in to their Apple ID, iCloud, iTunes, or
-      App Store account.  Includes forgotten passwords, two-factor
-      authentication problems, account locked or suspended, and difficulty
-      accessing purchased content.
+      The customer reports physical damage, screen defects, touch unresponsiveness,
+      camera malfunction, speaker or microphone failure, button damage, or
+      hardware components not functioning.
     inclusion_criteria:
-      - Cannot log in to Apple ID, iCloud, iTunes, App Store
-      - Account locked, disabled, or suspended
-      - Two-factor authentication not working
-      - Forgotten Apple ID password
+      - Mentions "screen", "cracked", "display", "touch screen", "camera", "speaker", "microphone", "mic", "button", "water damage", "liquid"
+      - Touch display not responding to input
+      - Hardware components physically broken or failing diagnostics
     exclusion_criteria:
-      - App-specific login (e.g. third-party app) → app_or_service_issue
-      - Device activation (new device setup) → device_hardware_issue
+      - Touch/app freezing due to software crash (→ app_or_service_issue or software_update)
+      - Charging port issue where cable or battery is the primary focus (→ battery_power)
     auto_handle: false
     escalation_risk: true
     examples:
-      - "I can't log into my iTunes account or iCloud on my phone"
-      - "my Apple ID is locked and I can't get the verification code"
-      - "I signed in with Apple ID but now I can't login to my MacBook Air"
-
-  - name: device_hardware_issue
-    display_name: "Device Hardware or Physical Issue"
-    definition: >
-      The customer reports a physical hardware defect, damage, or malfunction
-      on an Apple device.  Includes cracked screens, liquid damage, broken
-      buttons, charging port issues, speaker/microphone problems, camera
-      faults, and activation issues for new devices.
-    inclusion_criteria:
-      - Physical damage: cracked screen, liquid damage, broken button
-      - Hardware malfunction: speaker, camera, microphone, Touch ID not working
-      - Charging cable or port issue
-      - Device will not turn on
-      - New device setup / activation stuck
-    exclusion_criteria:
-      - Software-only problems → software_update_issue or battery_performance_issue
-      - iCloud/Apple ID issues → account_access_issue
-    auto_handle: false
-    escalation_risk: true
-    examples:
-      - "my iPhone screen is cracked and now touch doesn't work"
-      - "my charging cable stopped working after 2 weeks"
-      - "my MacBook Pro is completely dead — won't turn on"
+      - "dropped my phone and the screen is cracked and touch isn't working"
+      - "the front camera on my iPhone shows a completely black screen"
+      - "my speaker is crackling and people can't hear me on calls"
 
   - name: app_or_service_issue
-    display_name: "App or Third-Party Service Issue"
+    display_name: "Native App or Apple Service Issue"
     definition: >
-      The customer reports a problem with a specific Apple app (e.g. Apple
-      Music, FaceTime, iMessage, Safari, Maps, Siri, CarPlay) or a behaviour
-      that is app-specific rather than system-wide.
+      The customer reports a problem with a specific native Apple application
+      or service, including Apple Music, iMessage, FaceTime, Safari, Photos,
+      App Store, Mail, Maps, Siri, or CarPlay.
     inclusion_criteria:
-      - Names a specific Apple app or feature
-      - iMessage, FaceTime, Siri, Safari, Apple Maps, CarPlay, AirDrop
-      - App crashes, freezes, or behaves incorrectly
-      - Notifications not working for a specific app
+      - Names a specific Apple app: iMessage, FaceTime, Apple Music, Safari, Siri, App Store, Photos, Notes, CarPlay, AirDrop
+      - App crashes, fails to load content, or cannot sync media
+      - Specific app notifications or features failing
     exclusion_criteria:
-      - Third-party app issues the brand cannot directly fix → other
-      - System-wide crashes → device_hardware_issue or software_update_issue
+      - Third-party app external bugs with no Apple relation (→ unknown_other)
+      - Account credential errors preventing login (→ account_access)
     auto_handle: true
     escalation_risk: false
     examples:
-      - "iMessage is not sending to Android users"
-      - "Siri won't set alarms correctly since the update"
-      - "Apple Car Play keeps disconnecting from my iPhone"
+      - "Apple Music keeps pausing and skipping songs on its own"
+      - "iMessage is not delivering text messages to my contacts"
+      - "FaceTime hangs on connecting whenever I call my family"
 
-  - name: feature_how_to_question
-    display_name: "Feature Question or How-To Request"
+  - name: account_access
+    display_name: "Account, iCloud & Security"
     definition: >
-      The customer asks how to use a feature, requests a tip or tutorial,
-      or wants to know whether a feature exists.  No malfunction is involved —
-      the customer simply does not know how to do something.
+      The customer cannot sign in to their Apple ID, iCloud, or iTunes account.
+      Includes forgotten passwords, two-factor authentication (2FA) verification
+      failures, accounts locked or disabled for security reasons, and Keychain sync.
     inclusion_criteria:
-      - "How do I …"
-      - "Can I …"
-      - "Is there a way to …"
-      - Asking about a feature that exists but they cannot find
-      - Requesting a step-by-step guide
+      - Mentions "Apple ID", "iCloud", "password", "sign in", "login", "locked", "disabled", "verification code", "2FA", "two-factor"
+      - Account suspended or security questions locked
+      - Cannot receive verification SMS or code on trusted device
     exclusion_criteria:
-      - Feature is broken (not just unknown) → relevant specific intent
-      - Feature request for something that does not yet exist → other
+      - Third-party website or app password issues (→ unknown_other)
+      - Device activation lock for second-hand purchases (→ device_hardware or account_access)
+    auto_handle: false
+    escalation_risk: true
+    examples:
+      - "my Apple ID has been locked for security reasons and I can't reset my password"
+      - "I'm not getting the verification code sent to my trusted number"
+      - "forgot my iCloud password and the recovery email is old"
+
+  - name: connectivity_network
+    display_name: "Connectivity & Network"
+    definition: >
+      The customer reports problems connecting to Wi-Fi networks, Bluetooth
+      devices (e.g. AirPods, car systems), cellular mobile data / LTE,
+      dropped calls, No Service alerts, or SIM card recognition errors.
+    inclusion_criteria:
+      - Mentions "wifi", "wi-fi", "bluetooth", "cellular", "data", "lte", "no service", "sim card", "carrier", "dropped calls"
+      - Bluetooth device repeatedly disconnecting
+      - iPhone says 'Searching...' or 'No Service'
+    exclusion_criteria:
+      - App-specific streaming disconnection (→ app_or_service_issue)
+      - Physical SIM tray damage (→ device_hardware)
     auto_handle: true
     escalation_risk: false
     examples:
-      - "how do I share my handwritten notes as text from the native iOS notes app"
-      - "Is there a way to prevent my Apple Car Play from automatically playing music"
-      - "how do I turn off automatic app updates"
+      - "my iPhone keeps disconnecting from home Wi-Fi every 5 minutes"
+      - "my phone says No Service even though my carrier network is fine"
+      - "Bluetooth won't pair with my AirPods after restarting"
 
-  - name: other
-    display_name: "Other / Unclear"
+  - name: billing_payment
+    display_name: "Billing, Subscriptions & Payments"
     definition: >
-      The message does not fit any of the above intents, is too ambiguous to
-      classify reliably, is a continuation tweet with insufficient context, or
-      concerns a topic outside the scope of the defined taxonomy.
-      This is the mandatory catch-all intent.
+      The customer inquires about unexpected charges, subscription fees,
+      in-app purchases, App Store receipts, refund requests, or Apple Pay errors.
     inclusion_criteria:
-      - Cannot be reliably assigned to any other intent
-      - Very short tweets with no discernible topic ("@AppleSupport ok")
-      - Continuation replies with no standalone meaning
-      - Topics outside Apple product support scope
+      - Mentions "billing", "charge", "charged", "refund", "subscription", "receipt", "purchase", "apple pay", "credit card", "bank"
+      - Dispute over recurring monthly subscription charges
+      - Requesting refund for accidental in-app purchase
     exclusion_criteria:
-      - Any tweet that fits a more specific intent above
+      - Inability to download free apps due to account lock (→ account_access)
+      - Hardware warranty claims without payment dispute (→ device_hardware)
+    auto_handle: false
+    escalation_risk: true
+    examples:
+      - "I was charged $9.99 for Apple Music even though I cancelled my trial"
+      - "how do I request a refund for an accidental purchase in the App Store"
+      - "Apple Pay declined my card at checkout but the charge shows pending"
+
+  - name: order_shipping
+    display_name: "Online Orders, Shipping & Delivery"
+    definition: >
+      The customer inquires about the status, tracking, shipping delay, delivery,
+      or in-store pickup of a physical order placed through the Apple Online Store.
+    inclusion_criteria:
+      - Mentions "order", "shipping", "delivery", "delivered", "tracking", "fedex", "ups", "store pickup", "dispatch"
+      - Asking when their new iPhone or MacBook will arrive
+      - Shipment delayed or tracking number not updating
+    exclusion_criteria:
+      - App Store digital order disputes (→ billing_payment)
+      - Defective device received (→ device_hardware)
+    auto_handle: true
+    escalation_risk: false
+    examples:
+      - "my iPhone X order has been preparing for shipment for 5 days — when does it ship"
+      - "tracking number says delivered but my package was not on my porch"
+      - "can I change my delivery address for order W12345678"
+
+  - name: feature_how_to
+    display_name: "Feature Question & How-To"
+    definition: >
+      The customer asks how to use, configure, or find a feature, setting,
+      or capability in an Apple product without reporting a technical malfunction.
+    inclusion_criteria:
+      - Starts with "how do I", "how can I", "is there a way to", "can you tell me how"
+      - Seeking instructions or configuration guidance
+      - Inquiring whether a specific feature exists
+    exclusion_criteria:
+      - The feature is broken or throwing errors (→ app_or_service_issue or software_update)
+      - Feature request for non-existent future software (→ complaint_feedback)
+    auto_handle: true
+    escalation_risk: false
+    examples:
+      - "how do I turn off read receipts in iMessage for one specific person"
+      - "is there a way to record the screen on iOS without third party apps"
+      - "how can I transfer photos from my iPhone to a Windows PC"
+
+  - name: complaint_feedback
+    display_name: "Complaint & Product Feedback"
+    definition: >
+      The customer expresses general frustration, dissatisfaction, or feedback
+      regarding Apple devices, design decisions, customer service, or policies,
+      without asking a specific technical support question.
+    inclusion_criteria:
+      - Strong negative sentiment expressions ("fix your shit", "worst phone", "hate this company", "ridiculous")
+      - Complaints about Apple removing features (e.g. headphone jack)
+      - General venting without actionable technical query
+    exclusion_criteria:
+      - Actionable technical issue with details (→ software_update, battery_power, etc.)
+      - Billing dispute with refund demand (→ billing_payment)
+    auto_handle: false
+    escalation_risk: true
+    examples:
+      - "@AppleSupport your customer service in the store was absolutely terrible today"
+      - "removing the headphone jack was the dumbest idea ever Apple fix this"
+      - "worst update in history, so tired of Apple breaking things"
+
+  - name: unknown_other
+    display_name: "Unknown / Fallback / Other"
+    definition: >
+      The message does not contain sufficient information to classify into any
+      domain intent, is excessively short or conversational, is a continuation reply,
+      or concerns topics outside Apple product support.
+    inclusion_criteria:
+      - Short greetings or mentions ("@AppleSupport please help", "@AppleSupport")
+      - Continuation messages lacking standalone context ("yes I did that already")
+      - Ambiguous queries with no clear topical keyword
+      - Out-of-scope inquiries
+    exclusion_criteria:
+      - Any message matching a specific intent above with reasonable confidence
     auto_handle: false
     escalation_risk: false
     examples:
-      - "@AppleSupport ok thanks"
-      - "@AppleSupport https://t.co/somelink"
-      - "@AppleSupport see attached"
+      - "@AppleSupport hello can you DM me"
+      - "@AppleSupport https://t.co/xyz123"
+      - "ok thanks for the help"
 
 # ============================================================
 # Metadata
 # ============================================================
 metadata:
   brand: AppleSupport
-  version: "1.0"
-  total_intents: 7
-  fallback_intent: other
-  status: draft
+  version: "2.0"
+  total_intents: 11
+  fallback_intent: unknown_other
+  status: candidate_dataset_ready
   notes: >
-    This taxonomy is a draft derived from manual inspection of a sample of
-    customer tweets.  It will be refined during the labelling phase once
-    inter-rater agreement is measured.  The intent counts and boundaries
-    may change based on actual label distribution in the training set.
+    Taxonomy Version 2.0. Expanded to 11 grounded intent categories derived from
+    corpus exploration of 82,101 AppleSupport candidate conversations.
+    Enforces distinct boundaries between software updates, battery performance,
+    physical hardware, connectivity, and billing.
