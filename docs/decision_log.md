@@ -202,3 +202,29 @@ tested locally before adding external dependencies.
 
 **Trade-offs accepted:** The project cannot be demoed via URL until the hosting
 phase is complete, but local CLI execution provides equivalent verification.
+
+---
+
+## Decision 11: Graph-based conversation reconstruction and explicit link denominators
+
+**Decision:** Conversation threads are reconstructed using directed graph
+relationships (`in_response_to_tweet_id` and `response_tweet_id`) with
+connected-component analysis, deterministic timestamp + tweet_id ordering,
+cycle detection, and explicit metric denominators. Multiple-exchange threads
+are strictly defined as >= 4 messages with >= 2 customer and >= 2 brand turns.
+
+**Alternatives considered:** Flat grouping by author or arbitrary time
+windows; treating every 2-message customer-brand pair as multi-exchange;
+reporting link coverage percentages without explicit denominators.
+
+**Reason:** In Twitter customer service datasets, parent tweets may be missing
+(e.g., deleted or outside extract window) or branch into multiple responses.
+Earlier naive metrics reported 100% parent link coverage by dividing against
+the entire corpus rather than isolating messages with non-null parent IDs.
+Similarly, labeling single question-and-answer pairs as "multi-exchange"
+masks true conversation depth. Explicit denominators and strict thresholds
+ensure reliable quality evaluation for downstream retrieval and generation.
+
+**Trade-offs accepted:** Unconnected single messages and broken parent chains
+are preserved as flagged components rather than silently discarded or
+stitched heuristically.
