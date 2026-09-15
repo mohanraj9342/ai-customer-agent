@@ -607,3 +607,20 @@ combined with deep contextual representation (82.35% hardware F1) for complex cu
 **Trade-offs accepted:**
 1. Dynamically filtering candidates in the ranking loop incurs negligible CPU overhead (< 0.1ms per query) during candidate iteration, but completely avoids re-encoding or maintaining separate retrieval indices.
 2. Two additional benchmark cases in the weak retrieval cohort correctly triggered `weak_retrieval_grounding` escalation (similarity $< 0.50$), shifting the escalation confusion matrix from 30 TP / 20 FN to 32 TP / 18 FN and improving escalation F1 from 0.7317 to 0.7619 without any policy threshold modification.
+
+---
+
+## Decision 25: Production API Architecture — FastAPI with Lifespan Pre-Warming, Render Blueprint, and Vercel CORS Integration
+
+**Decision:** Encapsulate the Phase 10–13 agent pipeline inside a modern ASGI web application using **FastAPI** and **Uvicorn**. Implement asynchronous `lifespan` pre-warming to load the intent classifier and 81,943 dense retrieval embeddings into memory upon server startup, guaranteeing sub-200ms user request latencies. Configure declarative Infrastructure-as-Code deployment for **Render** via `render.yaml` and `Procfile`. Support cross-origin consumption from a future **Vercel** frontend via wildcard regex CORS configuration (`^https://.*\.vercel\.app$`). Enforce strict Pydantic v2 input validation, RFC-compliant error envelopes, and zero server-side secret leakage in API outputs.
+
+**Alternatives considered:**
+1. *Flask / WSGI:* Rejected. Lacks native async request handling, modern OpenAPI schema generation, and requires separate serialization/validation packages (marshmallow/pydantic) that increase architectural complexity.
+2. *Full-stack Next.js monolith with in-process Python binding:* Rejected. Python ML dependencies (PyTorch, sentence-transformers, scikit-learn, joblib) cannot run natively on Vercel's serverless edge environment due to bundle size limits (> 250 MB). Decoupling Render (Python AI compute) from Vercel (frontend UI) maintains clean separation of concerns and cost efficiency.
+3. *On-demand pipeline initialization per request:* Rejected. Cold-loading the 81,943 embeddings on the first HTTP request adds 2–3 seconds of latency; pre-warming during FastAPI `lifespan` eliminates cold-start penalties for incoming users.
+
+**Reason:** FastAPI provides high throughput, automatic interactive documentation (`/docs`), and robust Pydantic validation while maintaining compatibility with Python 3.14. Wildcard regex CORS handling ensures that Vercel preview environments generated across Git branches function immediately without manual DNS or CORS re-configuration.
+
+**Trade-offs accepted:**
+1. Pre-warming the retrieval corpus in memory consumes ~800MB to 1.2GB RAM during container execution. Render's Standard plan comfortably provides 2GB RAM to satisfy this requirement.
+2. The initial server boot takes ~5 seconds to load models into memory before `lifespan` yields, but subsequent HTTP requests process in real-time.

@@ -1,0 +1,32 @@
+# =============================================================================
+# render.yaml — Render Blueprint Specification for AI Customer Support Agent
+# =============================================================================
+# Phase 15: Production Deployment on Render
+# Connects to GitHub repository and serves the FastAPI backend via Uvicorn.
+# =============================================================================
+
+services:
+  - type: web
+    name: apple-support-ai-agent
+    runtime: python
+    region: oregon
+    plan: standard
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.api.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: GROQ_MODEL
+        value: qwen/qwen3.8-27b
+      - key: GROQ_API_KEY
+        sync: false  # Sensitive secret: must be configured directly in Render dashboard
+      - key: TARGET_BRAND
+        value: AppleSupport
+      - key: CORS_ORIGINS
+        value: "http://localhost:3000,http://localhost:5173"
+      - key: CORS_VERCEL_REGEX
+        value: "^https://.*\\.vercel\\.app$"
+      - key: API_DEFAULT_REVIEW_MODE
+        value: deterministic
+      - key: API_REQUEST_TIMEOUT_SECONDS
+        value: "30.0"
