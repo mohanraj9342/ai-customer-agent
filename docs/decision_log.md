@@ -539,3 +539,21 @@ combined with deep contextual representation (82.35% hardware F1) for complex cu
 **Trade-offs accepted:** 
 1. The dense index encodes single-turn initial inquiries; conversational context beyond the first exchange is not indexed.
 2. `all-MiniLM-L6-v2` is an English-dominant bi-encoder; non-English microblog queries (e.g., Spanish inquiries) experience lower similarity scores and require language detection or multilingual bi-encoders in subsequent iterations.
+
+---
+
+## Decision 21: Groq API LLM selection — qwen/qwen3.8-27b as primary grounded response model
+
+**Decision:** Select `qwen/qwen3.8-27b` (Alibaba Cloud, 27B parameters, 131k-token context window) as the primary Groq-hosted LLM for Phase 12 grounded agent response generation. Groq model availability was validated programmatically against the live Groq `/v1/models` endpoint before selection.
+
+**Alternatives considered:**
+1. *`llama-3.3-70b-versatile` (Meta):* Originally planned primary model. Confirmed **unavailable** on the project's Groq API key at time of Phase 12 implementation. Would have caused `404 model not found` errors at runtime.
+2. *`groq/compound` (Groq native):* Available. However, emits verbose chain-of-thought reasoning preambles even for simple instruction-following tasks (observed in live probing), making strict JSON schema output less reliable without complex post-processing.
+3. *`openai/gpt-oss-20b` (OpenAI OSS):* Available. However, returned empty content on the instruction-following smoke test, suggesting inconsistent tool-call mode vs. chat-completion mode on this API key configuration.
+4. *`openai/gpt-oss-120b` (OpenAI OSS):* Available but 120B parameters exceeds what is necessary for structured JSON generation in a grounded-retrieval context with a pre-built system prompt and explicit schema. Higher cost / token rate not justified.
+
+**Reason:** `qwen/qwen3.8-27b` was the only model that (a) passed the live Groq endpoint availability check, (b) responded correctly and precisely to instruction-following prompts without unsolicited reasoning preambles, and (c) supports the 131k-token context window required to embed multi-case retrieved evidence in the prompt. Its instruction-following quality is well-established on JSON-structured outputs.
+
+**Trade-offs accepted:**
+1. Qwen models are optimized for multilingual use; occasional tokenization idiosyncrasies may arise on English-only Apple support jargon (e.g., model IDs, iOS version strings). Mitigated by explicit JSON schema enforcement and output validation in `groq_client.py`.
+2. If Groq rotates model availability again, `GROQ_MODEL` must be re-validated. The `load_groq_config()` function raises a clear `ValueError` if the model env var is unset, and the `groq_client.py` raises `GroqGenerationError` if the API rejects the model name, so failures are surfaced immediately rather than silently producing wrong outputs.
