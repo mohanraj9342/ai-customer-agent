@@ -324,12 +324,49 @@ class TestGroundedSupportAgent:
         assert agent_response.evidence_source_ids == [555001]
         assert agent_response.grounding_score == 0.85
         assert agent_response.model_metadata["orchestrator_version"] == "1.0"
+        assert agent_response.model_metadata["model_used"] == "llama-3.3-70b-versatile"
+        assert agent_response.model_metadata["groq"]["model"] == "llama-3.3-70b-versatile"
 
         # Verify to_dict serialization
         data = agent_response.to_dict()
         assert "customer_message" in data
         assert "predicted_intent" in data
         assert "response" in data
+
+    def test_returned_model_name_equals_configured_groq_model(self, mock_agent):
+        """Verify that model_metadata['model_used'] matches the configured GROQ_MODEL."""
+        agent_response = mock_agent.process_message("My battery dies in 30 minutes")
+        configured_model = mock_agent._get_config().model
+        assert agent_response.model_metadata["model_used"] == configured_model
+        assert agent_response.model_metadata["model_used"] != "unknown"
+
+    def test_returned_model_name_on_escalated_path(self, mock_agent):
+        """Verify that model_used is set even when escalation prevents Groq API invocation."""
+        agent_response = mock_agent.process_message("My battery exploded and caught fire!")
+        assert agent_response.should_escalate is True
+        # Groq client was never called
+        mock_agent.groq_client.generate_json_response.assert_not_called()
+        # Model is still correctly populated from config, never 'unknown'
+        configured_model = mock_agent._get_config().model
+        assert agent_response.model_metadata["model_used"] == configured_model
+        assert agent_response.model_metadata["model_used"] != "unknown"
+
+    def test_returned_model_name_propagated_from_config_param(self):
+        """Verify model propagation when config is passed explicitly to GroundedSupportAgent."""
+        mock_retriever = MagicMock()
+        mock_retriever.corpus_size = 100
+        mock_retriever.retrieve.return_value = []
+        mock_predictor = MagicMock()
+        mock_predictor.predict.return_value = ("battery_power", 0.95, 0.90)
+
+        custom_cfg = GroqConfig(api_key=FAKE_API_KEY, model="custom-test-model-42b")
+        agent = GroundedSupportAgent(
+            retriever=mock_retriever,
+            intent_predictor=mock_predictor,
+            config=custom_cfg,
+        )
+        response = agent.process_message("Need battery help")
+        assert response.model_metadata["model_used"] == "custom-test-model-42b"
 
     def test_no_api_key_leakage_in_response(self, mock_agent):
         agent_response = mock_agent.process_message("My battery dies in 30 minutes")
@@ -363,3 +400,105 @@ class TestGroundedSupportAgent:
         for res in results:
             assert res.customer_tweet_id not in golden_ids
             assert res.brand_tweet_id not in golden_ids
+
+
+# ---------------------------------------------------------------------------
+# 6. Escalation Rule Interaction & Priority Tests
+# ---------------------------------------------------------------------------
+class TestEscalationRuleInteractions:
+    """
+    Tests for rule ordering, priority, conflicting triggers, and boundary conditions.
+    Critical rules must win over lower-severity rules on the same input.
+    MOCKED: No real Groq API calls are made in any of these tests.
+    """
+
+    def test_safety_hazard_wins_over_legal_keyword(self):
+        """Safety (critical) fires before legal (also critical) — first rule wins."""
+        res = EscalationEngine.evaluate(
+            customer_text="My phone exploded and I'm going to sue Apple!",
+            predicted_intent="complaint_feedback",
+        )
+        assert res.rule_triggered == "safety_hazard_alert"
+        assert res.severity == "critical"
+
+    def test_safety_hazard_wins_over_low_confidence(self):
+        """Critical safety rule fires even when classifier confidence is extremely low."""
+        res = EscalationEngine.evaluate(
+            customer_text="The phone started smoking heavily!",
+            predicted_intent="unknown_other",
+            intent_confidence=0.05,
+            intent_margin=0.01,
+        )
+        assert res.rule_triggered == "safety_hazard_alert"
+        assert res.severity == "critical"
+
+    def test_legal_wins_over_account_access(self):
+        """Legal threat (critical) fires before account_access (high)."""
+        res = EscalationEngine.evaluate(
+            customer_text="I will sue Apple for locking my iCloud account",
+            predicted_intent="account_access",
+        )
+        assert res.rule_triggered == "legal_fraud_alert"
+        assert res.severity == "critical"
+
+    def test_account_access_wins_over_low_confidence(self):
+        """Account security (high) triggers before confidence-based medium rules."""
+        res = EscalationEngine.evaluate(
+            customer_text="Cannot get into my Apple ID",
+            predicted_intent="account_access",
+            intent_confidence=0.30,
+            intent_margin=0.05,
+        )
+        assert res.rule_triggered == "account_security_escalation"
+        assert res.severity == "high"
+
+    def test_account_access_triggers_regardless_of_high_confidence(self):
+        """account_access must always escalate regardless of confidence level."""
+        res = EscalationEngine.evaluate(
+            customer_text="Locked out of my iCloud — need to reset Apple ID password",
+            predicted_intent="account_access",
+            intent_confidence=0.99,
+            intent_margin=0.98,
+            top_retrieval_similarity=0.95,
+        )
+        assert res.should_escalate is True
+        assert res.rule_triggered == "account_security_escalation"
+
+    def test_needs_review_is_not_a_taxonomy_class_triggers_low_confidence_path(self):
+        """
+        needs_review is an operational review state, NOT a taxonomy class.
+        If it appears as predicted_intent (upstream bug), escalation must route
+        it via the low_intent_confidence path rather than treating it as valid.
+        """
+        res = EscalationEngine.evaluate(
+            customer_text="My iCloud backup stopped working yesterday",
+            predicted_intent="needs_review",
+            intent_confidence=1.0,
+            intent_margin=1.0,
+            top_retrieval_similarity=0.90,
+        )
+        assert res.should_escalate is True
+        assert res.rule_triggered == "low_intent_confidence"
+
+    def test_confidence_exactly_at_threshold_does_not_escalate(self):
+        """Values exactly equal to thresholds are NOT below threshold — no escalation."""
+        res = EscalationEngine.evaluate(
+            customer_text="My iPhone storage is almost full after the update",
+            predicted_intent="software_update",
+            intent_confidence=EscalationEngine.MIN_CONFIDENCE_THRESHOLD,
+            intent_margin=EscalationEngine.MIN_CONFIDENCE_MARGIN,
+            top_retrieval_similarity=EscalationEngine.MIN_SIMILARITY_THRESHOLD,
+        )
+        assert res.should_escalate is False
+
+    def test_high_value_billing_requires_both_billing_intent_and_large_amount(self):
+        """billing_payment intent with a small dollar amount must NOT trigger the high-value rule."""
+        res = EscalationEngine.evaluate(
+            customer_text="I was charged $0.99 for an app I did not want",
+            predicted_intent="billing_payment",
+            intent_confidence=0.92,
+            intent_margin=0.85,
+            top_retrieval_similarity=0.82,
+        )
+        assert res.rule_triggered != "high_value_billing_dispute"
+        assert res.should_escalate is False

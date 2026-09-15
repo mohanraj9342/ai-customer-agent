@@ -110,9 +110,24 @@ class GroundedSupportAgent:
             self.retriever = HistoricalResponseRetriever()
         return self.retriever
 
+    def _get_config(self) -> GroqConfig:
+        """Return the GroqConfig without constructing a Groq client.
+
+        Used to read safe metadata (e.g. model name) for all code paths,
+        including escalated paths that never invoke the LLM.
+        """
+        if self._config is not None:
+            return self._config
+        if self.groq_client is not None and hasattr(self.groq_client, "config"):
+            return self.groq_client.config
+        # Load from environment — reads GROQ_API_KEY and GROQ_MODEL from .env.
+        # This does NOT make any network call.
+        self._config = load_groq_config()
+        return self._config
+
     def _ensure_groq_client(self) -> GroqGenerationClient:
         if self.groq_client is None:
-            cfg = self._config or load_groq_config()
+            cfg = self._get_config()
             self.groq_client = GroqGenerationClient(config=cfg)
         return self.groq_client
 
@@ -125,6 +140,10 @@ class GroundedSupportAgent:
         Process an inbound customer message through the grounded RAG workflow.
         """
         cleaned_text = (customer_message or "").strip()
+
+        # Resolve config early — needed for metadata on ALL code paths (including escalated).
+        # _get_config() reads from env without making any network call.
+        cfg = self._get_config()
 
         # 1. Intent Classification
         pred_intent, confidence, margin = self.intent_predictor.predict(cleaned_text)
@@ -220,17 +239,19 @@ class GroundedSupportAgent:
                     grounding_summary = "Fallback generic response due to absent evidence and generation error."
 
         # Metadata (safe to expose, zero credentials)
+        # model_used is always set from config — it must never be 'unknown',
+        # even on escalated paths that skip the Groq API call entirely.
         safe_meta = {
             "orchestrator_version": "1.0",
             "phase": "Phase 12: Grounded Agent Response Generation",
+            "model_used": cfg.model,
             "retrieval_corpus_size": retriever.corpus_size,
             "top_similarity_score": round(top_similarity, 4),
             "escalation_rule_triggered": escalation.rule_triggered,
             "escalation_severity": escalation.severity,
             "grounding_summary": grounding_summary,
+            "groq": cfg.safe_metadata(),
         }
-        if self.groq_client and hasattr(self.groq_client, "config"):
-            safe_meta["groq"] = self.groq_client.config.safe_metadata()
 
         return AgentResponse(
             customer_message=cleaned_text,

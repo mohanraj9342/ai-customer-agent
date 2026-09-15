@@ -45,9 +45,10 @@ _HIGH_VALUE_REFUND = re.compile(
     re.IGNORECASE,
 )
 
-# Harassment / emergency triggers
+# Harassment / emergency triggers — includes inflections (smoking, burning, etc.)
 _SAFETY_KEYWORDS = re.compile(
-    r"\b(emergency|threat|kill|harm|die|fire|smoke|exploded|burnt)\b",
+    r"\b(emergency|threat|kill|harm|die|fire|fires|smoke|smoking|smoked|"
+    r"explode|exploded|exploding|burn|burning|burnt|electric\s+shock|shocked)\b",
     re.IGNORECASE,
 )
 

@@ -2,12 +2,14 @@
 
 ## Overview
 
-Phase 12 implements a fully locally runnable, grounded support agent that combines three
+Phase 12 implements a locally runnable, development-stage grounded support agent that combines three
 previously built components — the Phase 10 intent classifier, the Phase 11 historical
 semantic retriever, and a Groq-hosted LLM — into a unified orchestration pipeline.
 
-The agent never generates responses from raw parametric knowledge. Every response is
-anchored to verified historical AppleSupport agent replies retrieved from the Phase 11 index.
+The agent never generates responses from raw parametric knowledge. Every draft response is
+anchored to historical AppleSupport response examples retrieved from the Phase 11 index.
+These historical examples represent how human agents responded in the past and are **not**
+verified current Apple policy, official Apple documentation, or technically audited knowledge.
 
 ---
 
@@ -84,23 +86,31 @@ and preventing the model from reasoning about high-risk cases.
 |---|---|---|
 | `safety_hazard_alert` | Keywords: fire, smoke, burn, explosion, shock | `critical` |
 | `legal_fraud_alert` | Keywords: lawyer, sue, lawsuit, fraud, scam | `critical` |
-| `account_security_escalation` | Intent: `account_access` with confidence ≥ 0.6 | `high` |
-| `high_value_billing_dispute` | Intent: `billing` + monetary value > $200 | `high` |
-| `low_intent_confidence` | Classifier confidence < 0.45 | `medium` |
-| `narrow_confidence_margin` | Top-2 confidence gap < 0.10 | `medium` |
-| `vague_short_query` | Token count < 4 | `low` |
-| `weak_retrieval_grounding` | Top-1 similarity score < 0.55 | `low` |
+| `account_security_escalation` | Intent: `account_access` (any confidence) | `high` |
+| `high_value_billing_dispute` | Intent: `billing_payment` + monetary amount ≥ $100 in text | `high` |
+| `low_intent_confidence` | Classifier confidence < 0.60 | `medium` |
+| `narrow_confidence_margin` | Top-2 confidence gap < 0.20 | `medium` |
+| `vague_short_query` | Word count < 3 | `low` |
+| `weak_retrieval_grounding` | Top-1 similarity score < 0.50 | `medium` |
 
-Critical-severity escalations trigger a **safe fallback response** that routes the
-customer to direct Apple Support channels, without invoking the Groq API.
+> **`account_access` intent** always triggers escalation regardless of confidence, because account
+> credential and authentication issues must never be resolved over a public channel.
+
+> **Critical escalations** (`safety_hazard_alert`, `legal_fraud_alert`) return a pre-built safe
+> fallback response that routes the customer to Apple Support directly —
+> **without consuming any Groq API tokens**.
+
+> **`needs_review`** is an **operational review state**, not a taxonomy class. It is never predicted
+> by the classifier. The escalation engine checks for it defensively to catch any upstream label
+> pipeline bugs.
 
 ### `src/generation/prompt_builder.py`
 
 Builds a two-part prompt:
 
-- **System prompt**: Grounding constraints — agent must only use evidence provided,
-  must never fabricate Apple product specs, pricing, or policy commitments, and must
-  output strict JSON matching the defined schema.
+- **System prompt**: Grounding constraints — the draft must rely only on historical
+  response examples provided, must not repeat historical URLs as currently valid
+  official resources, and must output strict JSON matching the defined schema.
 - **User prompt**: Intent classification metadata (label, confidence) followed by
   the top-k retrieved evidence cases (customer message, brand reply, similarity score).
 
