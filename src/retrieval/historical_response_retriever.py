@@ -19,7 +19,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Collection, Dict, List, Optional, Set
 
 import numpy as np
 import pandas as pd
@@ -102,6 +102,9 @@ class HistoricalResponseRetriever:
         min_score: float = -1.0,
         deduplicate_customer_text: bool = False,
         filter_intent: Optional[str] = None,
+        exclude_customer_tweet_ids: Optional[Collection[int] | int] = None,
+        exclude_thread_ids: Optional[Collection[str] | str] = None,
+        exclude_exact_customer_texts: Optional[Collection[str] | str] = None,
     ) -> List[RetrievalResult]:
         """
         Retrieve the top-k most semantically similar historical responses.
@@ -113,6 +116,11 @@ class HistoricalResponseRetriever:
             deduplicate_customer_text: If True, avoids returning multiple responses for
                                        identical customer inquiry text.
             filter_intent: Optional intent category to restrict candidates.
+            exclude_customer_tweet_ids: Optional collection or single tweet ID of customer messages
+                                        to exclude from retrieval (e.g. for leave-one-out evaluation).
+            exclude_thread_ids: Optional collection or single thread ID to exclude from retrieval.
+            exclude_exact_customer_texts: Optional collection or single customer query text to exclude
+                                          from retrieval (case-insensitive exact text match).
 
         Returns:
             List of RetrievalResult objects ranked by similarity score descending.
@@ -120,6 +128,43 @@ class HistoricalResponseRetriever:
         cleaned_query = (query or "").strip()
         if not cleaned_query:
             return []
+
+        # Parse per-query exclusions for fast O(1) membership check
+        tweet_id_exclusions: Set[int] = set()
+        if exclude_customer_tweet_ids is not None:
+            if isinstance(exclude_customer_tweet_ids, (int, str)):
+                try:
+                    tweet_id_exclusions.add(int(exclude_customer_tweet_ids))
+                except (ValueError, TypeError):
+                    pass
+            else:
+                for tid in exclude_customer_tweet_ids:
+                    try:
+                        tweet_id_exclusions.add(int(tid))
+                    except (ValueError, TypeError):
+                        pass
+
+        thread_id_exclusions: Set[str] = set()
+        if exclude_thread_ids is not None:
+            if isinstance(exclude_thread_ids, (str, int)):
+                thread_id_exclusions.add(str(exclude_thread_ids).strip())
+            else:
+                for th in exclude_thread_ids:
+                    if th is not None:
+                        thread_id_exclusions.add(str(th).strip())
+
+        text_exclusions: Set[str] = set()
+        if exclude_exact_customer_texts is not None:
+            if isinstance(exclude_exact_customer_texts, str):
+                cleaned_t = exclude_exact_customer_texts.strip().lower()
+                if cleaned_t:
+                    text_exclusions.add(cleaned_t)
+            else:
+                for t in exclude_exact_customer_texts:
+                    if t is not None:
+                        cleaned_t = str(t).strip().lower()
+                        if cleaned_t:
+                            text_exclusions.add(cleaned_t)
 
         # Encode and L2-normalize query vector
         q_vec = self.model.encode(
@@ -154,20 +199,30 @@ class HistoricalResponseRetriever:
         for idx in ranked_indices:
             score = float(scores[idx])
             row = self.df.iloc[idx]
+            c_tweet_id = int(row["customer_tweet_id"])
+            th_id = str(row["thread_id"]).strip()
             c_text = str(row["customer_text"])
+            norm_c_text = c_text.strip().lower()
+
+            # Per-query exclusion check (leave-one-out self-match prevention)
+            if tweet_id_exclusions and c_tweet_id in tweet_id_exclusions:
+                continue
+            if thread_id_exclusions and th_id in thread_id_exclusions:
+                continue
+            if text_exclusions and norm_c_text in text_exclusions:
+                continue
 
             if deduplicate_customer_text:
-                normalized = c_text.strip().lower()
-                if normalized in seen_texts:
+                if norm_c_text in seen_texts:
                     continue
-                seen_texts.add(normalized)
+                seen_texts.add(norm_c_text)
 
             results.append(
                 RetrievalResult(
                     rank=len(results) + 1,
                     similarity_score=round(score, 4),
-                    thread_id=str(row["thread_id"]),
-                    customer_tweet_id=int(row["customer_tweet_id"]),
+                    thread_id=th_id,
+                    customer_tweet_id=c_tweet_id,
                     customer_text=c_text,
                     brand_tweet_id=int(row["brand_tweet_id"]),
                     brand_text=str(row["brand_text"]),

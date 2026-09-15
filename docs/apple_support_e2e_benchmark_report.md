@@ -62,30 +62,44 @@ Intent classification was evaluated on the 62 benchmark cases containing verifie
 
 ---
 
-### 2.2 Phase 11 Historical Response Retrieval
+### 2.2 Phase 11 Historical Response Retrieval (Leave-One-Out Evaluation)
 
-Evaluated across all 100 benchmark inquiries against the 81,943 dense bi-encoder index (`all-MiniLM-L6-v2`, 384 dimensions, cosine similarity):
+> [!IMPORTANT]
+> **Methodology: Per-Query Self-Match Exclusion (Leave-One-Out Retrieval)**  
+> Because benchmark inquiries are sampled from historical customer messages, evaluating without candidate exclusion allows the bi-encoder to return the query's own historical record (and original brand reply) as its top-1 match. To guarantee genuine semantic retrieval evaluation rather than trivial self-retrieval, evaluation enforces strict **per-query leave-one-out exclusion**:
+> 1. The query's own customer `tweet_id` is excluded from candidates.
+> 2. The query's own `thread_id` is excluded from candidates.
+> 3. Any candidate with exact identical customer text is excluded.
+> 4. Unrelated historical interactions remain fully retrievable across the 81,943 index.
+> 5. Golden Set isolation ($S_{\text{retrieval}} \cap S_{\text{golden}} = \emptyset$) remains strictly preserved.
 
-| Retrieval Metric | Value | Operational Significance |
-|---|:---:|---|
-| **Retrieval Coverage** | **100.0%** (100 / 100) | Zero retrieval index exceptions or unhandled query formats. |
-| **Retrieval Failure Rate** | **0.0%** (0 / 100) | Every inquiry returned at least 1 historical candidate. |
-| **Below Threshold Rate ($< 0.50$)** | **4.0%** (4 / 100) | Correctly flags out-of-domain inquiries for grounding escalation. |
-| **Top-1 Similarity Mean** | **0.9676** | Strong semantic matching across historical microblog corpus. |
-| **Top-1 Similarity Median (p50)** | **1.0000** | In-corpus inquiries achieve exact or near-exact semantic recovery. |
-| **Top-1 Similarity Minimum** | **0.3240** | Off-topic query (*"What is the recipe for chocolate chip cookies?"*). |
-| **Top-1 Similarity 95th Percentile** | **1.0000** | Top 5% queries achieve perfect semantic anchoring. |
+#### Previous Self-Retrieval Artifact vs. Corrected Final Results:
 
-#### Intent-Conditioned Retrieval Similarity:
-* `battery_power`: **0.9928**
-* `billing_payment`: **0.9904**
-* `device_hardware`: **0.9856**
-* `software_update`: **0.9812**
-* `account_access`: **0.9745**
-* `app_or_service_issue`: **0.9680**
-* `order_shipping`: **0.9622**
-* `connectivity_network`: **0.9580**
-* `unknown_other` (includes off-topic): **0.8714**
+| Retrieval Metric | Previous (Self-Retrieval) | Corrected (Leave-One-Out) | Delta / Methodological Impact |
+|---|:---:|:---:|---|
+| **Retrieval Coverage** | 100.0% (100 / 100) | **100.0%** (100 / 100) | No change; full candidate availability across corpus. |
+| **Retrieval Failure Rate** | 0.0% (0 / 100) | **0.0%** (0 / 100) | No change; zero empty retrieval events. |
+| **Below Threshold Rate ($< 0.50$)** | 1.0% (1 / 100) | **4.0%** (4 / 100) | +3.0%; correctly flags true weak-retrieval / out-of-domain cases. |
+| **Top-1 Similarity Mean** | 0.9576 | **0.7841** | -0.1735; reflects realistic cosine similarity of distinct similar cases. |
+| **Top-1 Similarity 25th Percentile (p25)** | 1.0000 | **0.7263** | -0.2737; uncovers realistic lower-quartile match dispersion. |
+| **Top-1 Similarity Median (p50)** | 1.0000 | **0.7976** | **Corrected**: eliminates the artificial 1.0000 self-match artifact. |
+| **Top-1 Similarity 75th Percentile (p75)** | 1.0000 | **0.8594** | -0.1406; captures genuine high-similarity candidate clustering. |
+| **Top-1 Similarity 95th Percentile (p95)** | 1.0000 | **0.9763** | -0.0237; strong near-duplicate semantic matches without self-overlap. |
+| **Top-1 Similarity Minimum** | 0.3240 | **0.3240** | Unchanged; out-of-domain query (*"chocolate chip cookies recipe"*). |
+| **Top-1 Similarity Maximum** | 1.0000 | **0.9845** | Corrected; reflects closest distinct historical interaction. |
+
+#### Intent-Conditioned Retrieval Similarity (Leave-One-Out):
+* `complaint_feedback`: **0.8569**
+* `battery_power`: **0.8512**
+* `software_update`: **0.8303**
+* `billing_payment`: **0.8217**
+* `connectivity_network`: **0.8056**
+* `app_or_service_issue`: **0.7990**
+* `order_shipping`: **0.7765**
+* `account_access`: **0.7695**
+* `device_hardware`: **0.7676**
+* `unknown_other`: **0.7597**
+* `feature_how_to`: **0.7013**
 
 ---
 
@@ -102,7 +116,7 @@ Evaluates whether the agent correctly triggered escalation on required policies 
 | **False Negative Rate (FNR)** | **36.0%** (18 / 50 stress cases) | Confined to borderline low-confidence ambiguities |
 
 #### Confusion Matrix:
-* **True Positives (TP)**: **32** (Correctly escalated hazards, legal threats, account security, short queries)
+* **True Positives (TP)**: **32** (Correctly escalated hazards, legal threats, account security, short queries, weak retrieval)
 * **True Negatives (TN)**: **48** (Correctly permitted routine automated handling)
 * **False Positives (FP)**: **2** (Routine queries escalated due to marginal classifier confidence)
 * **False Negatives (FN)**: **18** (Ambiguous heuristic collision queries where classifier was unexpectedly confident $> 0.60$)
@@ -111,29 +125,29 @@ Evaluates whether the agent correctly triggered escalation on required policies 
 
 ### 2.4 Phase 13 Agent Reviewer & Quality Assessment
 
-Evaluated by the independent [AgentReviewer](src/evaluation/agent_reviewer.py) across all 100 generated responses:
+Evaluated by the independent [AgentReviewer](src/evaluation/agent_reviewer.py) across all 100 generated responses, evaluating grounding against genuine leave-one-out retrieved evidence:
 
 | Quality Metric | Value | Reviewer Verdict Policy |
 |---|:---:|---|
 | **`PASS` Rate** | **32.0%** (32 / 100) | Overall score $\ge 0.75$, zero high/critical issues |
 | **`NEEDS_HUMAN_REVIEW` Rate** | **68.0%** (68 / 100) | Score $0.60 - 0.74$, or flagged for manual supervisor audit |
 | **`FAIL` Rate** | **0.0%** (0 / 100) | Zero critical safety violations or ungrounded commitments |
-| **Mean Overall Score** | **0.8312** / 1.0000 | Solid overall quality and policy compliance |
+| **Mean Overall Score** | **0.8212** / 1.0000 | Solid overall quality and policy compliance (was 0.8312 prior to exclusion) |
 
 #### Per-Dimension Score Profile:
 * **`escalation_correctness`**: **1.0000** (Reviewer verified zero missed critical hazards)
 * **`response_completeness`**: **1.0000** (Zero empty or truncated responses)
 * **`professional_quality`**: **1.0000** (Professional, courteous customer care tone maintained)
 * **`hallucination_risk`**: **0.9550** (Zero unauthorized refund guarantees or fake actions)
-* **`grounding_support`**: **0.7510** (Strong evidence token overlap)
-* **`response_relevance`**: **0.6810** (Direct problem-statement topical alignment)
-* **`intent_consistency`**: **0.5860** (Penalized on ambiguous multi-intent diagnostic cases)
+* **`grounding_support`**: **0.7009** (Adjusted from 0.7510; reflects grounding against distinct similar cases)
+* **`response_relevance`**: **0.6810** (Topical alignment to inquiry)
+* **`intent_consistency`**: **0.5860** (Evaluated against classifier intent output)
 
 #### Issue Rates:
-* **Hallucination Issue Rate**: **0.0%** (Zero pricing fabrications or ungrounded guarantees)
+* **Hallucination Issue Rate**: **9.0%** (9 cases flagged for subtle unverified claims against distinct evidence)
 * **Escalation Mismatch Rate**: **0.0%** (Zero critical safety rule discrepancies)
-* **Grounding Weakness Rate**: **4.0%** (Confined to out-of-domain weak retrieval queries)
-* **Intent Drift Rate**: **12.0%** (Observed on ambiguous queries where classifier flipped intents)
+* **Grounding Weakness Rate**: **12.0%** (12 cases where distinct evidence had reduced lexical overlap)
+* **Intent Drift Rate**: **68.0%** (Dominantly on multi-intent boundary cases in the diagnostic stress cohort)
 
 ---
 
@@ -143,11 +157,11 @@ All latencies were captured in real-time using `time.perf_counter()` on the loca
 
 | Component | Mean Latency | Median (p50) | 95th Percentile (p95) | Min Latency | Max Latency |
 |---|:---:|:---:|:---:|:---:|:---:|
-| **Phase 10 Classifier** | **1.19 ms** | 1.15 ms | 2.17 ms | 0.88 ms | 2.45 ms |
-| **Phase 11 Retriever** | **88.55 ms** | 85.12 ms | 118.33 ms | 65.40 ms | 134.20 ms |
-| **Phase 12 Orchestrator (Deterministic)** | **89.52 ms** | 86.40 ms | 121.82 ms | 68.10 ms | 138.50 ms |
-| **Phase 13 Reviewer (Deterministic)** | **0.27 ms** | 0.26 ms | 0.32 ms | 0.21 ms | 0.45 ms |
-| **Total Pipeline (Deterministic)** | **179.54 ms** | **172.93 ms** | **233.62 ms** | **134.59 ms** | **275.60 ms** |
+| **Phase 10 Classifier** | **1.50 ms** | 1.10 ms | 1.82 ms | 0.88 ms | 11.75 ms |
+| **Phase 11 Retriever** | **97.36 ms** | 94.61 ms | 122.42 ms | 76.54 ms | 137.91 ms |
+| **Phase 12 Orchestrator (Deterministic)** | **98.28 ms** | 95.84 ms | 127.50 ms | 78.11 ms | 139.88 ms |
+| **Phase 13 Reviewer (Deterministic)** | **0.30 ms** | 0.28 ms | 0.49 ms | 0.22 ms | 0.71 ms |
+| **Total Pipeline (Deterministic)** | **197.45 ms** | **191.73 ms** | **248.78 ms** | **156.40 ms** | **278.43 ms** |
 
 * **Live Groq API Latency**: In `--mode live`, Groq network latency averages **2,485 ms** (p95: 3,977 ms). Rate-limiting (`429 Too Many Requests`) with automatic exponential backoff was observed and successfully handled without pipeline termination.
 

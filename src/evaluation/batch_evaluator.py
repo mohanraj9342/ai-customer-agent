@@ -335,6 +335,7 @@ class BatchEvaluationMetrics:
             "retrieval_failure_rate": failure_rate,
             "below_similarity_threshold_rate": below_thresh_rate,
             "threshold_configured": 0.50,
+            "leave_one_out_exclusion_active": True,
             "top1_similarity_distribution": dist,
             "intent_conditioned_mean_similarity": intent_conditioned,
         }
@@ -562,11 +563,27 @@ class EndToEndBatchEvaluator:
             t1 = time.perf_counter()
             t_clf_ms = (t1 - t0) * 1000.0
 
+            # Per-query exclusions (leave-one-out self-match prevention)
+            q_tweet_id = int(row["tweet_id"]) if pd.notna(row.get("tweet_id")) else None
+            q_thread_id = str(row["thread_id"]).strip() if pd.notna(row.get("thread_id")) else None
+            q_text = customer_msg.strip().lower() if customer_msg else None
+
+            exclude_tids = {q_tweet_id} if q_tweet_id is not None else None
+            exclude_thids = {q_thread_id} if q_thread_id else None
+            exclude_txts = {q_text} if q_text else None
+
             # ---------------------------------------------------------------
-            # Stage 2: Phase 11 Historical Retrieval
+            # Stage 2: Phase 11 Historical Retrieval (Leave-One-Out)
             # ---------------------------------------------------------------
             t2 = time.perf_counter()
-            retrieved_cases = self.retriever.retrieve(customer_msg, top_k=3)
+            retrieved_cases = self.retriever.retrieve(
+                customer_msg,
+                top_k=3,
+                deduplicate_customer_text=True,
+                exclude_customer_tweet_ids=exclude_tids,
+                exclude_thread_ids=exclude_thids,
+                exclude_exact_customer_texts=exclude_txts,
+            )
             t3 = time.perf_counter()
             t_ret_ms = (t3 - t2) * 1000.0
 
@@ -578,7 +595,13 @@ class EndToEndBatchEvaluator:
             # Stage 3: Phase 12 Agent Orchestration & Response Generation
             # ---------------------------------------------------------------
             t4 = time.perf_counter()
-            agent_resp: AgentResponse = self.agent.process_message(customer_msg, top_k_evidence=3)
+            agent_resp: AgentResponse = self.agent.process_message(
+                customer_msg,
+                top_k_evidence=3,
+                exclude_customer_tweet_ids=exclude_tids,
+                exclude_thread_ids=exclude_thids,
+                exclude_exact_customer_texts=exclude_txts,
+            )
             t5 = time.perf_counter()
             t_gen_ms = (t5 - t4) * 1000.0
 

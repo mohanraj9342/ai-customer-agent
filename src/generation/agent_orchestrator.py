@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import joblib
 import numpy as np
@@ -135,6 +135,9 @@ class GroundedSupportAgent:
         self,
         customer_message: str,
         top_k_evidence: int = 3,
+        exclude_customer_tweet_ids: Optional[Collection[int] | int] = None,
+        exclude_thread_ids: Optional[Collection[str] | str] = None,
+        exclude_exact_customer_texts: Optional[Collection[str] | str] = None,
     ) -> AgentResponse:
         """
         Process an inbound customer message through the grounded RAG workflow.
@@ -155,6 +158,9 @@ class GroundedSupportAgent:
             query=cleaned_text,
             top_k=top_k_evidence,
             deduplicate_customer_text=True,
+            exclude_customer_tweet_ids=exclude_customer_tweet_ids,
+            exclude_thread_ids=exclude_thread_ids,
+            exclude_exact_customer_texts=exclude_exact_customer_texts,
         )
 
         top_similarity = (

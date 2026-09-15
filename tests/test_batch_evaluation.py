@@ -27,6 +27,7 @@ from src.evaluation.batch_evaluator import (
     EndToEndBatchEvaluator,
     PipelineEvaluationRecord,
 )
+from src.retrieval.historical_response_retriever import HistoricalResponseRetriever
 from src.evaluation.benchmark_dataset import (
     DEFAULT_BENCHMARK_CSV,
     DEFAULT_GOLDEN_CSV,
@@ -274,3 +275,134 @@ class TestBatchEvaluationSecurity:
 
         assert "gsk_" not in payload_str
         assert "GROQ_API_KEY" not in payload_str
+
+
+# ---------------------------------------------------------------------------
+# 6. Benchmark Self-Retrieval Exclusion Regression Suite
+# ---------------------------------------------------------------------------
+class TestRetrievalExclusionRegression:
+    """
+    Verifies the leave-one-out self-retrieval prevention mechanism:
+    1. A benchmark query cannot retrieve its own customer tweet ID.
+    2. A benchmark query cannot retrieve its own thread ID.
+    3. An exact-text self-match is excluded where applicable.
+    4. Unrelated historical records remain retrievable.
+    5. Golden Set records remain strictly excluded.
+    """
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def benchmark_cases(cls):
+        df = load_or_build_benchmark()
+        return df
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def retriever_instance(cls):
+        return HistoricalResponseRetriever()
+
+    def test_cannot_retrieve_own_customer_tweet_id(self, benchmark_cases, retriever_instance):
+        """Query must not return its own customer_tweet_id when excluded."""
+        corpus_df = retriever_instance.df
+        corpus_tweet_ids = set(corpus_df["customer_tweet_id"].astype(int))
+
+        matching_rows = benchmark_cases[benchmark_cases["tweet_id"].astype(int).isin(corpus_tweet_ids)]
+        assert len(matching_rows) > 0, "No benchmark cases found in retrieval corpus"
+
+        for _, row in matching_rows.head(5).iterrows():
+            tid = int(row["tweet_id"])
+            query = str(row["customer_message"])
+
+            filtered_results = retriever_instance.retrieve(
+                query=query,
+                top_k=5,
+                exclude_customer_tweet_ids={tid},
+            )
+
+            retrieved_ids = [r.customer_tweet_id for r in filtered_results]
+            assert tid not in retrieved_ids, f"Tweet ID {tid} leaked into filtered results: {retrieved_ids}"
+
+    def test_cannot_retrieve_own_thread_id(self, benchmark_cases, retriever_instance):
+        """Query must not return any record matching its own thread_id when excluded."""
+        corpus_df = retriever_instance.df
+        corpus_threads = set(corpus_df["thread_id"].astype(str).str.strip())
+
+        matching_rows = benchmark_cases[benchmark_cases["thread_id"].astype(str).str.strip().isin(corpus_threads)]
+        assert len(matching_rows) > 0, "No benchmark cases found with matching thread_id in retrieval corpus"
+
+        for _, row in matching_rows.head(5).iterrows():
+            th_id = str(row["thread_id"]).strip()
+            query = str(row["customer_message"])
+
+            filtered_results = retriever_instance.retrieve(
+                query=query,
+                top_k=5,
+                exclude_thread_ids={th_id},
+            )
+
+            retrieved_threads = [r.thread_id.strip() for r in filtered_results]
+            assert th_id not in retrieved_threads, (
+                f"Thread ID {th_id} leaked into filtered results: {retrieved_threads}"
+            )
+
+    def test_exact_text_self_match_excluded(self, benchmark_cases, retriever_instance):
+        """Query must not return exact-text matches when excluded."""
+        corpus_df = retriever_instance.df
+        corpus_texts = set(corpus_df["customer_text"].str.strip().str.lower())
+
+        matching_rows = benchmark_cases[benchmark_cases["customer_message"].str.strip().str.lower().isin(corpus_texts)]
+        assert len(matching_rows) > 0, "No benchmark cases with matching text in corpus"
+
+        for _, row in matching_rows.head(5).iterrows():
+            text = str(row["customer_message"]).strip()
+            norm_text = text.lower()
+
+            filtered_results = retriever_instance.retrieve(
+                query=text,
+                top_k=5,
+                exclude_exact_customer_texts={norm_text},
+            )
+
+            retrieved_texts = [r.customer_text.strip().lower() for r in filtered_results]
+            assert norm_text not in retrieved_texts, (
+                f"Exact text '{norm_text}' leaked into filtered results: {retrieved_texts}"
+            )
+
+    def test_unrelated_historical_records_remain_retrievable(self, benchmark_cases, retriever_instance):
+        """Excluding self-records must still leave other genuine similar cases retrievable."""
+        row = benchmark_cases.iloc[0]
+        tid = int(row["tweet_id"])
+        th_id = str(row["thread_id"]).strip()
+        text = str(row["customer_message"]).strip()
+
+        results = retriever_instance.retrieve(
+            query=text,
+            top_k=3,
+            exclude_customer_tweet_ids={tid},
+            exclude_thread_ids={th_id},
+            exclude_exact_customer_texts={text.lower()},
+        )
+
+        assert len(results) > 0
+        assert all(r.customer_tweet_id != tid for r in results)
+        assert all(r.thread_id.strip() != th_id for r in results)
+        assert all(r.customer_text.strip().lower() != text.lower() for r in results)
+        assert all(isinstance(r.similarity_score, float) for r in results)
+
+    def test_golden_set_records_remain_strictly_excluded(self, benchmark_cases, retriever_instance):
+        """Retrieval candidates must NEVER intersect with the Phase 8 Golden Set."""
+        golden_df = pd.read_csv(GOLDEN_CSV)
+        golden_tweet_ids = set(golden_df["tweet_id"].astype(int))
+
+        for _, row in benchmark_cases.head(10).iterrows():
+            results = retriever_instance.retrieve(
+                query=str(row["customer_message"]),
+                top_k=5,
+                exclude_customer_tweet_ids={int(row["tweet_id"])},
+                exclude_thread_ids={str(row["thread_id"]).strip()},
+                exclude_exact_customer_texts={str(row["customer_message"]).strip().lower()},
+            )
+            retrieved_ids = {r.customer_tweet_id for r in results}
+            golden_leak = golden_tweet_ids.intersection(retrieved_ids)
+            assert len(golden_leak) == 0, f"CRITICAL CONTAMINATION: Golden Set IDs leaked: {golden_leak}"
+

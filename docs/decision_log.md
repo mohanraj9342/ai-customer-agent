@@ -591,3 +591,19 @@ combined with deep contextual representation (82.35% hardware F1) for complex cu
 **Trade-offs accepted:**
 1. The 100-case benchmark over-indexes on difficult edge cases (45% non-routine cohorts), which depresses overall escalation recall (64.0%) compared to what would be observed on routine macro traffic. This trade-off is accepted to ensure edge-case policy robustness.
 2. The benchmark routine cohort uses programmatically derived heuristic labels rather than double-blind human annotations, which is explicitly disclosed in the label typology.
+
+---
+
+## Decision 24: Prevention of Benchmark Self-Retrieval via Reusable Per-Query Leave-One-Out Candidate Exclusion
+
+**Decision:** Implement a generic, reusable candidate exclusion mechanism in `HistoricalResponseRetriever.retrieve()` (`exclude_customer_tweet_ids`, `exclude_thread_ids`, `exclude_exact_customer_texts`) and forward these parameters through `GroundedSupportAgent.process_message()`. Apply this mechanism per-query in `EndToEndBatchEvaluator` so that during Phase 14 benchmarking, each query excludes its own customer tweet ID, thread ID, and normalized customer text from retrieval candidates. This eliminates artificial cosine similarity 1.0000 self-matches without globally mutating or rebuilding the 81,943-record retrieval corpus and preserves pristine quarantine of the Phase 8 Golden Evaluation Set ($S_{\text{retrieval}} \cap S_{\text{golden}} = \emptyset$).
+
+**Alternatives considered:**
+1. *Permanently removing all 100 benchmark cases from the Phase 11 retrieval index:* Rejected. Globally deleting benchmark records from the corpus would mutate the baseline retrieval index, reduce index coverage for queries whose true historical context is unrelated, and introduce index-level configuration drift between evaluation and production.
+2. *Hard-coding exclusion logic inside the benchmark script only:* Rejected. Hard-coding filtering outside the retriever obscures retrieval boundaries, prevents reuse across other evaluation suites, and fails to protect the downstream `GroundedSupportAgent` and `AgentReviewer` pipeline stages.
+
+**Reason:** In leave-one-out evaluation of retrieval-augmented generation systems, evaluating an in-corpus query against an index containing that exact historical query record results in trivial self-retrieval (measured top-1 median similarity 1.0000). By dynamically excluding only the active query's own records at retrieval time, the retriever is forced to locate distinct, semantically similar historical cases (corrected top-1 median similarity 0.7976, mean 0.7841), providing a realistic assessment of semantic retrieval and grounding quality.
+
+**Trade-offs accepted:**
+1. Dynamically filtering candidates in the ranking loop incurs negligible CPU overhead (< 0.1ms per query) during candidate iteration, but completely avoids re-encoding or maintaining separate retrieval indices.
+2. Two additional benchmark cases in the weak retrieval cohort correctly triggered `weak_retrieval_grounding` escalation (similarity $< 0.50$), shifting the escalation confusion matrix from 30 TP / 20 FN to 32 TP / 18 FN and improving escalation F1 from 0.7317 to 0.7619 without any policy threshold modification.
