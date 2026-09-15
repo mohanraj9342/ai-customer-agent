@@ -231,11 +231,11 @@ def train_distilroberta(
             super().__init__(*args, **kwargs)
             self.class_weights = class_weights_tensor
 
-        def compute_loss(self, model: Any, inputs: Dict[str, Any], return_outputs: bool = False) -> Any:
+        def compute_loss(self, model: Any, inputs: Dict[str, Any], return_outputs: bool = False, **kwargs: Any) -> Any:
             labels = inputs.get("labels")
             outputs = model(**inputs)
             logits = outputs.get("logits")
-            if self.class_weights is not None:
+            if self.class_weights is not None and logits is not None and labels is not None:
                 loss_fct = torch.nn.CrossEntropyLoss(weight=self.class_weights.to(logits.device))
                 loss = loss_fct(logits.view(-1, self.model.config.num_labels), labels.view(-1))
             else:
@@ -254,32 +254,56 @@ def train_distilroberta(
             "weighted_f1": float(weighted_f1),
         }
 
-    # 7. Training Arguments
+    # 7. Training Arguments with Dynamic Signature Inspection (Universal Version Compatibility)
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     checkpoints_dir = out_path / "checkpoints"
 
     weights_tensor = torch.tensor(class_weights, dtype=torch.float32)
 
-    training_args = TrainingArguments(
-        output_dir=str(checkpoints_dir),
-        eval_strategy="epoch",
-        save_strategy="epoch",
-        learning_rate=learning_rate,
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size * 2,
-        num_train_epochs=epochs,
-        weight_decay=DEFAULT_WEIGHT_DECAY,
-        warmup_ratio=DEFAULT_WARMUP_RATIO,
-        fp16=True,  # CUDA mixed precision
-        load_best_model_at_end=True,
-        metric_for_best_model="macro_f1",
-        greater_is_better=True,
-        save_total_limit=1,
-        logging_steps=50,
-        seed=seed,
-        report_to="none",
-    )
+    import inspect
+    sig = inspect.signature(TrainingArguments.__init__).parameters
+
+    args_dict: Dict[str, Any] = {
+        "output_dir": str(checkpoints_dir),
+        "learning_rate": learning_rate,
+        "per_device_train_batch_size": batch_size,
+        "per_device_eval_batch_size": batch_size * 2,
+        "num_train_epochs": epochs,
+        "weight_decay": DEFAULT_WEIGHT_DECAY,
+        "load_best_model_at_end": True,
+        "metric_for_best_model": "macro_f1",
+        "greater_is_better": True,
+        "save_total_limit": 1,
+        "logging_steps": 50,
+        "seed": seed,
+        "report_to": "none",
+    }
+
+    # fp16 support
+    if "fp16" in sig and torch.cuda.is_available():
+        args_dict["fp16"] = True
+
+    # Version-safe evaluation strategy (eval_strategy in newer, evaluation_strategy in older)
+    if "eval_strategy" in sig:
+        args_dict["eval_strategy"] = "epoch"
+    elif "evaluation_strategy" in sig:
+        args_dict["evaluation_strategy"] = "epoch"
+
+    # Version-safe save strategy
+    if "save_strategy" in sig:
+        args_dict["save_strategy"] = "epoch"
+
+    # Version-safe warmup (warmup_ratio in newer, warmup_steps in older)
+    total_steps = max(1, (len(ds_train_tok) // batch_size) * epochs)
+    if "warmup_ratio" in sig:
+        args_dict["warmup_ratio"] = DEFAULT_WARMUP_RATIO
+    elif "warmup_steps" in sig:
+        args_dict["warmup_steps"] = int(total_steps * DEFAULT_WARMUP_RATIO)
+
+    # Filter arguments to strictly match supported parameters of installed transformers
+    valid_args = {k: v for k, v in args_dict.items() if k in sig}
+    training_args = TrainingArguments(**valid_args)
 
     trainer = WeightedTrainer(
         model=model,
