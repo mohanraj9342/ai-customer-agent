@@ -488,3 +488,38 @@ for genuinely ambiguous inquiries (e.g. multi-symptom inquiries).
 production cases (75.71% accuracy) and core customer care categories (`connectivity_network`
 85.71% F1, `order_shipping` 82.35% F1, `billing_payment` 78.26% F1, `account_access` 76.92% F1)
 validates this model as an effective, auditable baseline for front-line intent triage.
+
+---
+
+## Decision 19: DistilRoBERTa fine-tuning on remote Colab GPU, class-weighted cross-entropy loss, golden benchmark comparison, and hybrid cascade strategy
+
+**Decision:** Fine-tune `distilroberta-base` (~82M parameters) strictly on remote GPU hardware
+(NVIDIA Tesla T4 in Google Colab) using class-weighted cross-entropy loss, 128 max sequence length,
+batch size 32, AdamW with initial learning rate 3e-5 and fp16 mixed precision across 3 epochs.
+Prohibit local CPU training to preserve laptop responsiveness and avoid 5+ hours of thermal
+throttling. Enforce strict mathematical training isolation ($S_{\text{train}} \cap S_{\text{golden}} = \emptyset$)
+over 76,071 candidate records, benchmark against the 155 closed-world golden records, and adopt a
+two-tier hybrid cascade deployment recommendation.
+
+**Alternatives considered:**
+1. *Local CPU transformer fine-tuning:* Prohibited by operational guidelines. The local laptop's
+   AMD Ryzen 3 5300U processor lacks CUDA/Tensor Cores and would have required 4–6+ hours of 100% CPU
+   saturation with high OOM risks, whereas the remote Tesla T4 completed all 3 epochs in 11m 21s.
+2. *Full replacement of Phase 9 baseline with DistilRoBERTa:* Rejected based on empirical golden
+   set benchmarking. While DistilRoBERTa achieves superior F1 on semantic domains (`device_hardware`
+   82.35% vs 70.59%, `app_or_service_issue` 55.17% vs 46.15%), Logistic Regression achieves higher
+   overall Macro-F1 (63.19% vs 59.29%) and 125x lower inference latency (<0.2 ms vs 25 ms).
+3. *Unweighted transformer training:* Rejected due to severe class imbalance; unweighted loss
+   penalizes low-support business categories (`order_shipping`, `billing_payment`).
+
+**Reason:** DistilRoBERTa demonstrates genuine semantic understanding where n-gram models fail,
+gaining +11.76% F1 on descriptive hardware damage phrasing and +9.02% F1 on service/app issues.
+However, because training candidates were heuristically labeled, the deep neural model partially
+memorized heuristic nuances. The optimal production strategy is a hybrid cascade: TF-IDF + Logistic
+Regression performs sub-millisecond front-line triage for high-confidence structured queries, while
+low-confidence or hardware/app queries are escalated to DistilRoBERTa.
+
+**Trade-offs accepted:** Maintaining two model architectures adds deployment footprint, but delivers
+the best of both worlds: ultra-low latency (<0.2 ms) and high overall F1 for common categories,
+combined with deep contextual representation (82.35% hardware F1) for complex customer complaints.
+
