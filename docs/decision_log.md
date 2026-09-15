@@ -523,3 +523,19 @@ low-confidence or hardware/app queries are escalated to DistilRoBERTa.
 the best of both worlds: ultra-low latency (<0.2 ms) and high overall F1 for common categories,
 combined with deep contextual representation (82.35% hardware F1) for complex customer complaints.
 
+---
+
+## Decision 20: Historical response retrieval & grounding architecture, dense bi-encoder indexing (all-MiniLM-L6-v2), and strict Golden Set quarantine
+
+**Decision:** Build a semantic response retrieval and grounding engine using dense vector embeddings from `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions, L2-normalized) indexing 81,943 grounded customer-inquiry $\leftrightarrow$ brand-reply interaction pairs extracted from reconstructed AppleSupport threads. Enforce strict mathematical quarantine of all 158 Phase 8 Golden Evaluation Set records ($S_{\text{retrieval}} \cap S_{\text{golden}} = \emptyset$). Implement sub-10ms exact cosine similarity retrieval via normalized BLAS inner products ($S = X \cdot q^T$) on local CPU hardware without deploying generative LLMs or external vector database infrastructure.
+
+**Alternatives considered:**
+1. *Generative LLM response synthesis:* Strictly rejected for Phase 11. Generative language models present unacceptable risks of hallucination, inaccurate troubleshooting advice, and ungrounded policy commitments in regulated customer support contexts. Grounded retrieval guarantees that all proposed responses represent verbatim historical actions taken by verified AppleSupport agents.
+2. *TF-IDF / BM25 lexical sparse retrieval:* Rejected as the primary retrieval mechanism because keyword-based matching suffers from vocabulary mismatch (e.g. "battery dies in 30 mins" vs "battery drains rapidly", or "screen shattered" vs "cracked glass"). Dense bi-encoders capture contextual semantic equivalence across varied colloquial customer phrasings.
+3. *Cloud vector database deployment (e.g. Pinecone, Milvus, Qdrant):* Deferred. At 81,943 vectors of dimension 384, the entire index occupies only ~126 MB in RAM. A vectorized in-memory NumPy matrix product executes in < 4 milliseconds per query, eliminating external network latency, cloud costs, and operational dependency burden.
+
+**Reason:** In high-stakes enterprise customer support, grounding and safety are paramount. Historical response retrieval allows the automated assistant to suggest proven, agent-validated troubleshooting workflows and official Apple Knowledge Base URLs. Quarantining the 158 Golden Set records preserves the pristine evaluation integrity of future end-to-end response generation and triage benchmarks.
+
+**Trade-offs accepted:** 
+1. The dense index encodes single-turn initial inquiries; conversational context beyond the first exchange is not indexed.
+2. `all-MiniLM-L6-v2` is an English-dominant bi-encoder; non-English microblog queries (e.g., Spanish inquiries) experience lower similarity scores and require language detection or multilingual bi-encoders in subsequent iterations.
