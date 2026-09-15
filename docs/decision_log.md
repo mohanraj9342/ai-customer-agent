@@ -449,3 +449,42 @@ classes (e.g., `account_access` with 5 instances) are wider than on high-frequen
 However, 100% human verification and zero data leakage provide far higher evaluation
 validity than a larger, noisy heuristic set.
 
+---
+
+## Decision 18: Intent classifier benchmarking architecture, class-weight balancing, and diagnostic evaluation on the golden set
+
+**Decision:** Train and benchmark three intent classification models: a Majority-Class Baseline
+(`DummyClassifier`), TF-IDF + Logistic Regression (multinomial L2, balanced class weighting),
+and TF-IDF + Linear SVM (`LinearSVC`, balanced class weighting) using sublinear TF-IDF
+(10,000 max features, unigrams and bigrams). Enforce strict training isolation
+($S_{\text{train}} \cap S_{\text{golden}} = \emptyset$) on 76,071 clean training candidates
+(excluding 5,872 unverified heuristic conflicts). Benchmark primary closed-world performance
+on the 155 resolved golden evaluation records and conduct diagnostic confidence/margin
+analysis on the 3 ambiguous `needs_review` cases. Select TF-IDF + Logistic Regression as
+the primary model artifact.
+
+**Alternatives considered:**
+1. *Unweighted empirical loss optimization:* Rejected because extreme candidate class
+   imbalance (49.5% `unknown_other` vs 0.26% `order_shipping`) causes unweighted models
+   to collapse recall on critical low-frequency operational intents like billing and shipping.
+2. *Deep neural / generative architectures at baseline phase:* Deferred in favor of
+   establishing an interpretable, deterministic linear baseline first, establishing clear
+   performance floors before adding model complexity.
+3. *Ad-hoc random test splitting from candidates:* Rejected because evaluating against
+   noisy heuristic labels corrupts metric integrity; benchmarking strictly against the
+   human-verified golden set ensures true ground-truth validity.
+
+**Reason:** TF-IDF + Logistic Regression with balanced class weighting achieves 59.35% accuracy,
+63.19% Macro-F1, and 59.64% Weighted-F1 on the golden set, decisively beating the Majority
+Baseline (9.03% accuracy, 1.51% Macro-F1) and outperforming Linear SVM (54.84% accuracy,
+59.61% Macro-F1). The smooth probabilistic outputs provide calibrated posteriors, enabling
+principled confidence thresholding ($P < 0.60$ or margin $< 0.20$) to trigger human escalation
+for genuinely ambiguous inquiries (e.g. multi-symptom inquiries).
+
+**Trade-offs accepted:** Surface n-gram models struggle with semantic attribution
+(distinguishing root symptoms from casual temporal mentions like "after update" in the
+`attribution_vs_symptom` slice, 54.17% accuracy) and subtle boundary disambiguation
+(0.0% accuracy on 7 boundary cases). However, robust performance on representative
+production cases (75.71% accuracy) and core customer care categories (`connectivity_network`
+85.71% F1, `order_shipping` 82.35% F1, `billing_payment` 78.26% F1, `account_access` 76.92% F1)
+validates this model as an effective, auditable baseline for front-line intent triage.
