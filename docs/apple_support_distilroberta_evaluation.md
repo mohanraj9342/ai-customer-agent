@@ -74,22 +74,28 @@ Comparing per-intent F1 scores of DistilRoBERTa against Phase 9's best model (TF
 
 ## 5. Diagnostic Analysis of Ambiguous Cases (3 `needs_review` Records)
 
-The 3 ambiguous records in the golden set represent irreconcilable multi-intent conflicts identified during human review:
+The 3 ambiguous records in the human-verified Golden Evaluation Set represent genuine irreconcilable multi-intent conflicts identified during Phase 8 human review (Case Difficulty: `ambiguous_multi_intent`, Golden Intent: `needs_review`):
 
-1. **Tweet 14871 (Multi-problem update bug vs. battery drain):**
-   * *Customer Text:* "My favorite part of @115858 's new iPhone update is the part where battery dies in 2 hours and phone overheats..."
+1. **Tweet 410510 (Spanish Multi-Symptom: Bluetooth disconnect, screen freeze, and battery drain post-update):**
+   * *Customer Text:* `@AppleSupport con la nueva actualización, tengo problemas para conectarme con el Bluetooth, la pantalla se traba y no me rinde la batería.`
+   * *Reviewer Notes:* `Irreconcilable multi-intent across Bluetooth connectivity, screen freeze, and battery drain following an update without a single dominant symptom.`
+   * *Competing Taxonomy Classes:* `connectivity_network`, `software_update`, `device_hardware`, `battery_power`
+   * *DistilRoBERTa Prediction:* `unknown_other` (Confidence: **99.97%**, Margin: **0.9996**)
+   * *Baseline Comparison & Diagnostic:* In Phase 9, TF-IDF + Logistic Regression classified this inquiry as `connectivity_network` ($P = 0.8192$, margin $0.6981$) driven by the explicit "Bluetooth" token. Because the customer text is entirely in Spanish, DistilRoBERTa's English-centric vocabulary was unfamiliar with the localized syntax, attributing it to `unknown_other` ($P = 0.9997$). This underscores the necessity of language detection or multilingual encoders (e.g. XLM-RoBERTa) for non-English queries.
+
+2. **Tweet 965710 (Hardware repair damage vs. £3,250 commercial refund dispute):**
+   * *Customer Text:* `Hey @AppleSupport. Had my device 3 months and a key developed a fault, had it back from store today and the mechanism behind the key is now snapped. No device = loss of income; this is my only required tool. Disappointed & want to switch, can I get full refund? Laptop was £3,250!`
+   * *Reviewer Notes:* `Irreconcilable multi-intent between physical hardware damage caused during repair and a £3,250 full refund dispute.`
+   * *Competing Taxonomy Classes:* `device_hardware`, `billing_payment`, `complaint_feedback`
+   * *DistilRoBERTa Prediction:* `billing_payment` (Confidence: **99.48%**, Margin: **0.9903**)
+   * *Baseline Comparison & Diagnostic:* In Phase 9, Logistic Regression predicted `complaint_feedback` ($P = 0.5327$, margin $0.3591$ over `billing_payment`). DistilRoBERTa heavily weighted the explicit commercial refund request ("can I get full refund? Laptop was £3,250!"), classifying it into `billing_payment` ($P = 0.9948$) over the hardware damage cause ("key is now snapped"). Both models illustrate why complex multi-claim disputes require human supervisor escalation.
+
+3. **Tweet 1066754 (Catastrophic battery drain vs. total internet outage post-update):**
+   * *Customer Text:* `My favorite part of @115858 ‘s new iPhone update is the part where my battery lasts 20 minutes and the internet never works ever`
+   * *Reviewer Notes:* `Irreconcilable multi-intent with equal severity between catastrophic battery drain (lasts 20 mins) and total internet failure post-update.`
+   * *Competing Taxonomy Classes:* `battery_power`, `connectivity_network`, `software_update`
    * *DistilRoBERTa Prediction:* `software_update` (Confidence: **99.96%**, Margin: **0.9994**)
-   * *Diagnosis:* DistilRoBERTa’s self-attention strongly weighted the initial clause "new iPhone update", dominating the battery/thermal symptoms.
-
-2. **Tweet 115903 (Hardware damage vs. billing dispute):**
-   * *Customer Text:* "@AppleSupport screen shattered on my 8 plus and AppleCare expired yesterday can you help waive replacement fee"
-   * *DistilRoBERTa Prediction:* `device_hardware` (Confidence: **78.42%**, Margin: **0.5684**)
-   * *Diagnosis:* The physical description "screen shattered" received the highest attention weight over the fee waiver request.
-
-3. **Tweet 116201 (Account lockout vs. order delivery):**
-   * *Customer Text:* "Locked out of Apple ID while waiting for confirmation on my iPhone X delivery @AppleSupport"
-   * *DistilRoBERTa Prediction:* `account_access` (Confidence: **84.15%**, Margin: **0.6830**)
-   * *Diagnosis:* Correctly prioritized the immediate blocker (`account_access`) over the passive delivery status.
+   * *Baseline Comparison & Diagnostic:* While Phase 9 Logistic Regression split its probability mass between `battery_power` ($P = 0.5341$) and `software_update` ($P = 0.4012$) yielding a narrow margin of $0.1333$, DistilRoBERTa's bidirectional self-attention strongly anchored on the opening sarcastic clause `"new iPhone update"`, dominating the co-equal battery collapse ($20$ mins) and internet failure symptoms.
 
 ---
 
