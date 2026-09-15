@@ -408,3 +408,44 @@ scaling human annotation across the full 1,874-record review dataset.
 pilot design, the observed preliminary rule agreement rate (49.37%) is substantially lower
 than natural distribution accuracy. This is intentional and necessary for stress-testing
 guidelines against worst-case boundary ambiguities.
+
+---
+
+## Decision 17: Golden evaluation set construction, slice difficulty taxonomy, and training isolation protocol
+
+**Decision:** Establish the 158-record human-verified dataset
+(`data/processed/apple_support/apple_support_intent_golden_set.csv`) as the
+canonical Golden Evaluation Set for the AppleSupport intent classifier.
+Annotate each instance with an operational difficulty slice (`representative`,
+`attribution_vs_symptom`, `rule_conflict`, `fallback_recovery`,
+`boundary_disambiguation`, `short_noisy`, `multilingual`, `ambiguous_multi_intent`).
+Explicitly preserve the 3 genuinely ambiguous multi-intent cases as `needs_review`
+with `verification_status: flagged_ambiguous`. Mandate strict training isolation
+guaranteeing $S_{\text{train}} \cap S_{\text{golden}} = \emptyset$ across all future model
+training candidate pools via programmatic verification.
+
+**Alternatives considered:**
+1. *Expanding the golden set beyond 158 records using automated rule filtering:*
+   Rejected because evaluation benchmarks must consist strictly of human-verified
+   ground truth; synthetic or heuristic expansion introduces label noise and degrades
+   benchmark reliability.
+2. *Forcing a single dominant class on the 3 `needs_review` cases in the golden set:*
+   Rejected because artificial forced single-label assignment misrepresents true
+   conversational ambiguity; keeping them explicitly flagged provides ground truth for
+   evaluating classifier confidence and escalation logic.
+3. *Ad-hoc train/test splitting without a permanent golden registry:* Rejected because
+   dynamic random splits risk evaluation set leakage into training pools and prevent
+   reproducible longitudinal benchmarking across model iterations.
+
+**Reason:** A high-quality evaluation set must be independent, human-verified,
+representative of operational challenges, and strictly quarantined from training data.
+The 158-record golden set provides audited representation across all 11 taxonomy domains
+and fallback classes, incorporates stress-tested boundary and conflict cases, and provides
+fine-grained difficulty slices for diagnostic error analysis. Programmatic isolation
+guarantees zero data leakage for subsequent model training.
+
+**Trade-offs accepted:** At 158 records, statistical confidence intervals for rare
+classes (e.g., `account_access` with 5 instances) are wider than on high-frequency classes.
+However, 100% human verification and zero data leakage provide far higher evaluation
+validity than a larger, noisy heuristic set.
+
