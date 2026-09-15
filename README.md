@@ -198,12 +198,27 @@ python -m src.classification.build_golden_evaluation_set
 python -m src.classification.train_eval_intent_classifier --train --evaluate --save-models
 ```
 
-### 4. Run Automated Test Suite
-
-The project includes 330 unit, integration, and property-based regression tests covering thread reconstruction, topological cycles, taxonomy schemas, training isolation, deterministic reproducibility, and evaluation metrics:
+### 4. Run Production API & Frontend
 
 ```bash
-pytest -v
+# Terminal 1: Run Production FastAPI backend (Render environment)
+.venv/bin/uvicorn src.api.app:app --host 127.0.0.1 --port 8000 --reload
+
+# Terminal 2: Run React + Vite frontend (Vercel environment)
+npm --prefix frontend install
+npm --prefix frontend run dev
+```
+
+Visit [http://127.0.0.1:5173](http://127.0.0.1:5173) to interact with the web interface.
+
+### 5. Run Automated Test Suite
+
+```bash
+# Python API & ML pipeline regression suite (434 tests)
+pytest -q
+
+# React + Vite frontend unit & integration test suite (13 tests)
+npm --prefix frontend test
 ```
 
 ---
@@ -215,10 +230,14 @@ All major architectural choices, trade-offs, and design rationales are formally 
 * **Decision 13–15**: Empirical taxonomy design (v2.0), customer triage unit definition, heuristic conflict labeling, and boundary disambiguation.
 * **Decision 16**: Human annotation pilot audit and multi-intent edge-case methodology.
 * **Decision 17**: Golden Evaluation Set construction (158 records), 8-tier case difficulty taxonomy, and mathematical training data isolation ($S_{\text{train}} \cap S_{\text{golden}} = \emptyset$).
-* **Decision 18**: Intent classifier model architecture selection, balanced class-loss weighting, diagnostic golden set evaluation, and confidence margin thresholding for automated human escalation.
+* **Decision 18–22**: Intent classifier model architecture selection, grounded agent response generation, and independent quality review.
+* **Decision 23–24**: Phase 14 end-to-end benchmark evaluation and self-retrieval candidate exclusion.
+* **Decision 25–26**: Phase 15 FastAPI ASGI backend, Render deployment, and CORS origin restriction.
+* **Decision 27**: Phase 16 Vercel frontend architecture, React + Vite SPA, and client-side secret safety.
 
 ---
 
 ## License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+

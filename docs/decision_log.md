@@ -641,3 +641,21 @@ combined with deep contextual representation (82.35% hardware F1) for complex cu
 **Trade-offs accepted:**
 1. Vercel preview branch deployments are no longer automatically permitted by default; developers must either add specific preview domains to `CORS_ORIGINS` on Render or configure custom scoped regex if preview testing is explicitly required.
 
+---
+
+## Decision 27: Phase 16 Vercel Frontend Architecture — React + Vite SPA, Subdirectory Isolation, and Zero Client-Side Secrets
+
+**Decision:** Implement the Phase 16 frontend as an isolated React + Vite Single Page Application (SPA) inside the `frontend/` directory. Configure client API communication with the Render backend exclusively via `fetch()` utilizing the `VITE_API_URL` environment variable. Structure the user interface around modular, resilient components (`ChatInput`, `AgentResponseCard`, `EscalationBanner`, `ReviewerAuditCard`, `EvidenceAccordion`, `ErrorBanner`) styled with a cohesive Vanilla CSS design system (Apple-inspired dark mode). Guarantee zero client-side secret exposure: all Groq API tokens, bi-encoder models, historical tweet vector stores, and reviewer logic remain securely hosted on Render. Configure `frontend/vercel.json` with client-side SPA rewrites for seamless deployment on Vercel.
+
+**Alternatives considered:**
+1. *Next.js Full-Stack App on Vercel:* Rejected. The backend ML pipeline (PyTorch, DistilRoBERTa, Sentence-Transformers, Groq SDK) exceeds Vercel's serverless function size thresholds (> 250 MB). Decoupling Render (Python compute) from Vercel (static React frontend) provides superior cost efficiency and allows independent scaling.
+2. *Embedding Python backend directly in frontend repository root:* Rejected. Mixing Python virtual environment and Node `package.json` at the root creates deployment friction on Vercel and Render. Isolating the frontend in `frontend/` maintains clean dependency separation.
+3. *TailwindCSS / Component Libraries (MUI, Chakra):* Rejected in favor of curated Vanilla CSS. Vanilla CSS provides zero build overhead, precise typography and surface token control, and avoids third-party dependency churn.
+
+**Reason:** Separating the frontend UI from the ML backend achieves clean architectural decoupling. The frontend remains a lightweight, sub-second building SPA that consumes standard JSON contracts over HTTPS, while the backend maintains control over data quarantine, rate limiting, and secret safety.
+
+**Trade-offs accepted:**
+1. Cross-origin communication requires CORS coordination between Render (`CORS_ORIGINS`) and Vercel (`VITE_API_URL`).
+2. SPA client-side routing requires an explicit rewrite rule in `vercel.json` (`/ (.*) -> /index.html`) to prevent 404s on browser refreshes.
+
+

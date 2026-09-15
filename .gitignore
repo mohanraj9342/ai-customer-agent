@@ -152,3 +152,14 @@ desktop.ini
 *.swp
 *.swo
 .ropeproject/
+
+# ---------------------------------------------------------------------------
+# Node.js and frontend build artifacts
+# ---------------------------------------------------------------------------
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.vite/
+frontend/.vite/
+
