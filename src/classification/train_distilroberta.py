@@ -228,6 +228,16 @@ def train_distilroberta(
     # 6. Custom Trainer with Class-Weighted Cross-Entropy Loss
     class WeightedTrainer(Trainer):
         def __init__(self, *args: Any, class_weights_tensor: torch.Tensor | None = None, **kwargs: Any) -> None:
+            # Dynamically map tokenizer <-> processing_class across all transformers releases
+            import inspect
+            trainer_params = inspect.signature(Trainer.__init__).parameters
+            if "tokenizer" in kwargs and "processing_class" in trainer_params:
+                kwargs["processing_class"] = kwargs.pop("tokenizer")
+            elif "processing_class" in kwargs and "tokenizer" in trainer_params:
+                kwargs["tokenizer"] = kwargs.pop("processing_class")
+            elif "tokenizer" in kwargs and "tokenizer" not in trainer_params and "processing_class" not in trainer_params:
+                tok = kwargs.pop("tokenizer")
+                self.processing_class = tok
             super().__init__(*args, **kwargs)
             self.class_weights = class_weights_tensor
 
@@ -305,15 +315,24 @@ def train_distilroberta(
     valid_args = {k: v for k, v in args_dict.items() if k in sig}
     training_args = TrainingArguments(**valid_args)
 
-    trainer = WeightedTrainer(
-        model=model,
-        args=training_args,
-        train_dataset=ds_train_tok,
-        eval_dataset=ds_val_tok,
-        tokenizer=tokenizer,
-        compute_metrics=compute_metrics,
-        class_weights_tensor=weights_tensor,
-    )
+    # Resolve trainer parameters dynamically
+    trainer_params = inspect.signature(Trainer.__init__).parameters
+    trainer_kwargs: Dict[str, Any] = {
+        "model": model,
+        "args": training_args,
+        "train_dataset": ds_train_tok,
+        "eval_dataset": ds_val_tok,
+        "compute_metrics": compute_metrics,
+        "class_weights_tensor": weights_tensor,
+    }
+    if "processing_class" in trainer_params:
+        trainer_kwargs["processing_class"] = tokenizer
+    elif "tokenizer" in trainer_params:
+        trainer_kwargs["tokenizer"] = tokenizer
+    else:
+        trainer_kwargs["processing_class"] = tokenizer
+
+    trainer = WeightedTrainer(**trainer_kwargs)
 
     logger.info("Starting DistilRoBERTa fine-tuning on GPU...")
     train_result = trainer.train()
