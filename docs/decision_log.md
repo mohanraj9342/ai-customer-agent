@@ -557,3 +557,20 @@ combined with deep contextual representation (82.35% hardware F1) for complex cu
 **Trade-offs accepted:**
 1. Qwen models are optimized for multilingual use; occasional tokenization idiosyncrasies may arise on English-only Apple support jargon (e.g., model IDs, iOS version strings). Mitigated by explicit JSON schema enforcement and output validation in `groq_client.py`.
 2. If Groq rotates model availability again, `GROQ_MODEL` must be re-validated. The `load_groq_config()` function raises a clear `ValueError` if the model env var is unset, and the `groq_client.py` raises `GroqGenerationError` if the API rejects the model name, so failures are surfaced immediately rather than silently producing wrong outputs.
+
+---
+
+## Decision 22: Phase 13 Agent Evaluation & Reviewer Layer architecture — deterministic-first auditing, hybrid LLM grading, and strict response immutability
+
+**Decision:** Implement an independent, post-generation evaluation layer (`AgentReviewer` in `src/evaluation/agent_reviewer.py`) that evaluates Phase 12 `AgentResponse` outputs along 7 core dimensions (`grounding_support`, `hallucination_risk`, `escalation_correctness`, `intent_consistency`, `response_relevance`, `response_completeness`, and `professional_quality`). Adopt a deterministic-first architecture: critical physical safety hazards, legal threats, unauthorized refund guarantees, and fabricated account actions are audited deterministically with hard-gated `FAIL` decisions. Support an optional hybrid LLM mode utilizing the existing Groq client configuration (`qwen/qwen3.8-27b`) for semantic nuance and tone assessment. Guarantee strict non-mutation of primary agent outputs and absolute quarantine of the Phase 8 Golden Evaluation Set.
+
+**Alternatives considered:**
+1. *In-pipeline response alteration / self-correction loop:* Rejected. Allowing the reviewer to silently edit or regenerate responses complicates auditability, obscures primary agent failure modes, and creates non-deterministic feedback loops. Downstream consumer systems must receive the unadulterated `AgentResponse` alongside the independent `EvaluationResult`.
+2. *Pure LLM-as-a-Judge evaluation:* Rejected. LLM judges are prone to non-determinism, instruction-following drift, and latency/cost penalties on high-throughput microblog pipelines. Hard safety violations (such as missed physical hazards or unauthorized refund commitments) must never rely solely on probabilistic LLM judgment.
+3. *Pure deterministic rule evaluation:* Insufficient on its own for complex semantic assessment. While deterministic rules excel at detecting hard policy violations, regex cannot reliably grade conversational tone, subtle relevance, or implicit technical advice. The hybrid architecture provides the speed and certainty of deterministic safety with the semantic flexibility of LLM judging.
+
+**Reason:** In enterprise customer care, safety, grounding, and auditability must be verifiable independently of the generative model that produced the draft. Decoupling the reviewer ensures that model changes or prompt iterations in Phase 12 can be objectively benchmarked against a consistent, unchanging evaluation standard.
+
+**Trade-offs accepted:**
+1. Lexical grounding checks rely on token overlap heuristics and may underestimate grounding when the LLM rephrases historical evidence into novel synonyms. Mitigated in hybrid mode where the LLM reviewer evaluates semantic equivalence.
+2. The reviewer introduces an evaluation step; running in pure deterministic mode adds < 2ms latency, while hybrid LLM mode requires an additional Groq completion call (~500ms). Deterministic mode is therefore recommended for inline routing, reserving hybrid mode for offline quality audits or asynchronous human-in-the-loop review.
