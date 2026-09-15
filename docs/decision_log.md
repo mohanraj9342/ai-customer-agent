@@ -574,3 +574,20 @@ combined with deep contextual representation (82.35% hardware F1) for complex cu
 **Trade-offs accepted:**
 1. Lexical grounding checks rely on token overlap heuristics and may underestimate grounding when the LLM rephrases historical evidence into novel synonyms. Mitigated in hybrid mode where the LLM reviewer evaluates semantic equivalence.
 2. The reviewer introduces an evaluation step; running in pure deterministic mode adds < 2ms latency, while hybrid LLM mode requires an additional Groq completion call (~500ms). Deterministic mode is therefore recommended for inline routing, reserving hybrid mode for offline quality audits or asynchronous human-in-the-loop review.
+
+---
+
+## Decision 23: Phase 14 End-to-End Batch Evaluation methodology, benchmark design, dual-mode execution, and strict Golden Set quarantine
+
+**Decision:** Construct a controlled 100-case evaluation benchmark dataset (`apple_support_e2e_benchmark.csv`) sampled across 5 operational cohorts (`routine`, `ambiguous_low_confidence`, `escalation_sensitive`, `vague_short`, and `weak_retrieval`). Explicitly disclose that this benchmark is an engineered coverage stress-test rather than a statistically representative sample of the full AppleSupport population. Enforce strict mathematical quarantine of all 158 Phase 8 Golden Set records ($S_{\text{benchmark}} \cap S_{\text{golden}} = \emptyset$). Support dual evaluation modes: `--mode deterministic` utilizing an explicit offline replay generator (`offline-deterministic-replay`) for fast, zero-cost, reproducible regression benchmarking, and `--mode live` for real Groq API execution. Measure all latencies empirically via `time.perf_counter()`. Strictly prohibit tuning classifier thresholds, prompts, or reviewer rules against this benchmark.
+
+**Alternatives considered:**
+1. *Benchmarking on the Phase 8 Golden Evaluation Set:* Strictly rejected. Reusing the Golden Evaluation Set for end-to-end multi-phase orchestration risks data leakage, compromises its role as a pristine held-out intent benchmark, and conflates classification evaluation with response generation.
+2. *Full live Groq benchmarking for all 100 cases on every run:* Rejected due to GroqCloud API rate limits (observed HTTP 429 backoff) and unnecessary token costs. Providing an explicit deterministic replay mode enables sub-second regression testing in CI environments while reserving live API runs for targeted validation.
+3. *Simulating live generation in deterministic mode:* Rejected. Deterministic mode must explicitly attribute draft responses to offline replay from historical evidence rather than masquerading as live LLM output.
+
+**Reason:** Rigorous machine learning engineering requires end-to-end validation of integrated pipelines. Measuring real per-component latencies (Classifier: 1.19ms, Retriever: 88.55ms, Orchestration: 89.52ms, Reviewer: 0.27ms) demonstrates that the entire pipeline operates well within interactive SLAs (< 200ms total deterministic latency), while capturing policy precision (94.1%) and zero critical safety failures across edge-case cohorts.
+
+**Trade-offs accepted:**
+1. The 100-case benchmark over-indexes on difficult edge cases (45% non-routine cohorts), which depresses overall escalation recall (64.0%) compared to what would be observed on routine macro traffic. This trade-off is accepted to ensure edge-case policy robustness.
+2. The benchmark routine cohort uses programmatically derived heuristic labels rather than double-blind human annotations, which is explicitly disclosed in the label typology.
