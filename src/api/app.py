@@ -5,7 +5,7 @@ Phase 15 — FastAPI Application Factory & Lifecycle Management.
 
 Configures:
 - Application lifespan pre-warming of model and retrieval pipelines.
-- CORS middleware with wildcard regex support for Vercel preview environments.
+- CORS middleware with explicit allowed origins for production frontend and local development.
 - Global exception handlers preventing secret and traceback leakage.
 - Health, readiness, and chat routes.
 """

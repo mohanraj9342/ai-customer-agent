@@ -624,3 +624,20 @@ combined with deep contextual representation (82.35% hardware F1) for complex cu
 **Trade-offs accepted:**
 1. Pre-warming the retrieval corpus in memory consumes ~800MB to 1.2GB RAM during container execution. Render's Standard plan comfortably provides 2GB RAM to satisfy this requirement.
 2. The initial server boot takes ~5 seconds to load models into memory before `lifespan` yields, but subsequent HTTP requests process in real-time.
+
+---
+
+## Decision 26: Hardening Backend CORS Policy — Restricting Access to Explicit Production Origins via CORS_ORIGINS
+
+**Decision:** Eliminate the permissive default wildcard Vercel origin regex (`^https://.*\.vercel\.app$`) in `ApiConfig` and `load_api_config()`. Default `cors_origin_regex` to `None`, and require explicit production frontend origins to be provided via the `CORS_ORIGINS` environment variable. Automatically preserve local development origins (`http://localhost:3000`, `http://localhost:5173`, `http://127.0.0.1:3000`, `http://127.0.0.1:5173`). Update `render.yaml`, `.env.example`, and test suites to enforce that intended frontend origins are granted CORS access while arbitrary Vercel-hosted origins are strictly rejected.
+
+**Alternatives considered:**
+1. *Keep permissive wildcard regex (`^https://.*\.vercel\.app$`):* Strictly rejected. Any external actor or compromised project hosted on `*.vercel.app` could make credentialed browser cross-origin requests to the backend API, violating origin isolation.
+2. *Regex restricted to project name prefix (e.g. `^https://apple-support-ai-agent.*\.vercel\.app$`):* Considered, but rejected as a default. Explicit origin enumeration via `CORS_ORIGINS` provides deterministic, least-privilege security and aligns with Render's standard environment configuration patterns.
+3. *Hardcode production frontend origin in Python code:* Rejected. Hardcoding prevents multi-environment testing and forces code changes whenever custom domains or staging environments change.
+
+**Reason:** Production security mandates the principle of least privilege. In multi-tenant platforms like Vercel, allowing all subdomains (`*.vercel.app`) permits any malicious or unrelated Vercel user to invoke API endpoints from the browser. By switching to explicit origin enumeration via `CORS_ORIGINS`, only designated frontend origins and local development servers can interact with the backend API.
+
+**Trade-offs accepted:**
+1. Vercel preview branch deployments are no longer automatically permitted by default; developers must either add specific preview domains to `CORS_ORIGINS` on Render or configure custom scoped regex if preview testing is explicitly required.
+

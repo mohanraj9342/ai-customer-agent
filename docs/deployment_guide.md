@@ -17,8 +17,8 @@ The AI Customer Support Agent utilizes a decoupled, modern cloud architecture:
 +------------------------------------+          Cross-Origin Requests (CORS)          +------------------------------------+
 |  Render Web Service                | <-------------------------------------------- |  Vercel Frontend (Future Phase)    |
 |  - Python FastAPI + Uvicorn        |                                               |  - Next.js / React Web UI          |
-|  - Phase 10 Intent Classification  | --------------------------------------------> |  - Production: *.vercel.app        |
-|  - Phase 11 Historical Retrieval   |          Structured JSON Responses            |  - Preview: branch-*.vercel.app    |
+|  - Phase 10 Intent Classification  | --------------------------------------------> |  - Production: your-app.vercel.app |
+|  - Phase 11 Historical Retrieval   |          Structured JSON Responses            |  - Dev: localhost:3000 / :5173     |
 |  - Phase 12 Grounded Agent (Groq)  |                                               +------------------------------------+
 |  - Phase 13 Agent Reviewer Layer   |
 +------------------------------------+
@@ -66,8 +66,7 @@ The following environment variables must be configured in Render (under **Enviro
 | `TARGET_BRAND` | No | `AppleSupport` | Primary brand name filter for historical context. |
 | `PORT` | Auto | `8000` | Injected dynamically by Render during container startup. |
 | `API_HOST` | No | `0.0.0.0` | Network binding interface. |
-| `CORS_ORIGINS` | No | `http://localhost:3000,http://localhost:5173` | Comma-separated list of explicit allowed origins. |
-| `CORS_VERCEL_REGEX` | No | `^https://.*\.vercel\.app$` | Regular expression matching all production and branch preview URLs on Vercel. |
+| `CORS_ORIGINS` | No | `http://localhost:3000,http://localhost:5173` | Comma-separated list of explicit allowed origins (e.g. `http://localhost:3000,http://localhost:5173,https://apple-support-ai-agent.vercel.app`). Wildcard Vercel regexes are prohibited in production to prevent unauthorized cross-origin requests from arbitrary Vercel tenants. |
 | `API_DEFAULT_REVIEW_MODE` | No | `deterministic` | Reviewer execution mode (`deterministic` or `hybrid`). |
 | `API_REQUEST_TIMEOUT_SECONDS` | No | `30.0` | Request processing timeout limit. |
 
@@ -267,9 +266,14 @@ export async function sendCustomerInquiry(message: string): Promise<ChatResponse
 }
 ```
 
-### 4.3 Automatic CORS Handling on Vercel
-* The API's `CORSMiddleware` includes `cors_origin_regex=r"^https://.*\.vercel\.app$"`.
-* This ensures that every Vercel Preview deployment (e.g. `https://my-app-git-feat-xyz.vercel.app`) as well as the production deployment (`https://my-app.vercel.app`) has seamless cross-origin access without manual DNS or CORS updates.
+### 4.3 Secure CORS Origin Configuration on Render
+* To protect against unauthorized cross-origin requests from untrusted external domains or arbitrary Vercel projects, the backend does not use a permissive wildcard regex (`*.vercel.app`).
+* Instead, specify the exact production Vercel frontend URL in the Render environment variable `CORS_ORIGINS`:
+  ```env
+  CORS_ORIGINS=http://localhost:3000,http://localhost:5173,https://apple-support-ai-agent.vercel.app
+  ```
+* Localhost development ports (`3000` and `5173`) are supported by default.
+* Disallowed origins will not receive `Access-Control-Allow-Origin` response headers, and preflight `OPTIONS` requests from unapproved domains are rejected.
 
 ---
 

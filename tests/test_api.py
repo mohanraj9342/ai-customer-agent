@@ -6,7 +6,7 @@ Phase 15 — Production API Test Suite for Grounded AI Customer Support Agent.
 Verifies:
 1. Health check liveness probe (/health).
 2. Readiness check probe (/ready) with model and index statuses.
-3. CORS headers and preflight requests for Vercel production and preview domains.
+3. CORS headers and preflight requests for allowed Vercel frontend, localhost, and rejection of unauthorized origins.
 4. End-to-end chat endpoint (/api/chat) on routine inquiries with mocked Groq responses.
 5. Critical safety escalation handling via API.
 6. Request validation (empty text, whitespace, oversized payload).
@@ -27,7 +27,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api.app import create_app
-from src.api.config import ApiConfig
+from src.api.config import ApiConfig, load_api_config
 from src.evaluation.agent_reviewer import AgentReviewer
 from src.generation.agent_orchestrator import GroundedSupportAgent, IntentPredictor
 from src.generation.config import GroqConfig
@@ -67,8 +67,12 @@ def test_app(mock_groq_client):
     )
     reviewer = AgentReviewer()
     api_config = ApiConfig(
-        cors_origins=["http://localhost:3000", "https://my-app.vercel.app"],
-        cors_origin_regex=r"^https://.*\.vercel\.app$",
+        cors_origins=[
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "https://apple-support-ai-agent.vercel.app",
+        ],
+        cors_origin_regex=None,
     )
     return create_app(agent=agent, reviewer=reviewer, api_config=api_config)
 
@@ -112,22 +116,10 @@ class TestHealthAndReadiness:
 # 2. CORS & Vercel Integration Tests
 # ---------------------------------------------------------------------------
 class TestCorsConfiguration:
-    def test_cors_preflight_production_vercel_domain(self, client):
-        """OPTIONS /api/chat handles preflight for production Vercel frontend."""
+    def test_cors_intended_vercel_origin_allowed(self, client):
+        """Intended production Vercel frontend origin receives valid CORS headers."""
         headers = {
-            "Origin": "https://my-app.vercel.app",
-            "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "Content-Type",
-        }
-        resp = client.options("/api/chat", headers=headers)
-        assert resp.status_code == 200
-        assert resp.headers.get("access-control-allow-origin") == "https://my-app.vercel.app"
-        assert "POST" in resp.headers.get("access-control-allow-methods", "")
-
-    def test_cors_preflight_preview_vercel_domain_regex(self, client):
-        """OPTIONS /api/chat handles preview branch deployments via wildcard regex."""
-        headers = {
-            "Origin": "https://my-app-git-feat-phase15-team.vercel.app",
+            "Origin": "https://apple-support-ai-agent.vercel.app",
             "Access-Control-Request-Method": "POST",
             "Access-Control-Request-Headers": "Content-Type",
         }
@@ -135,18 +127,80 @@ class TestCorsConfiguration:
         assert resp.status_code == 200
         assert (
             resp.headers.get("access-control-allow-origin")
-            == "https://my-app-git-feat-phase15-team.vercel.app"
+            == "https://apple-support-ai-agent.vercel.app"
+        )
+        assert "POST" in resp.headers.get("access-control-allow-methods", "")
+
+        # Direct POST request with intended origin
+        post_resp = client.post(
+            "/api/chat",
+            headers={"Origin": "https://apple-support-ai-agent.vercel.app"},
+            json={"message": "How do I check battery health?"},
+        )
+        assert post_resp.status_code == 200
+        assert (
+            post_resp.headers.get("access-control-allow-origin")
+            == "https://apple-support-ai-agent.vercel.app"
         )
 
-    def test_cors_preflight_local_development(self, client):
-        """OPTIONS /api/chat handles local frontend development."""
-        headers = {
-            "Origin": "http://localhost:3000",
-            "Access-Control-Request-Method": "POST",
-        }
-        resp = client.options("/api/chat", headers=headers)
-        assert resp.status_code == 200
-        assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
+    def test_cors_localhost_origins_allowed(self, client):
+        """Local development origins (localhost:3000 and localhost:5173) are allowed."""
+        for local_origin in ("http://localhost:3000", "http://localhost:5173"):
+            headers = {
+                "Origin": local_origin,
+                "Access-Control-Request-Method": "POST",
+            }
+            resp = client.options("/api/chat", headers=headers)
+            assert resp.status_code == 200
+            assert resp.headers.get("access-control-allow-origin") == local_origin
+
+    def test_cors_unrelated_vercel_origins_rejected(self, client):
+        """Unrelated and arbitrary Vercel origins are strictly rejected without wildcard access."""
+        unrelated_origins = [
+            "https://unauthorized-attacker.vercel.app",
+            "https://arbitrary-tenant.vercel.app",
+            "https://my-app-git-feat-phase15-team.vercel.app",
+        ]
+        for bad_origin in unrelated_origins:
+            # Preflight OPTIONS is rejected with 400 Bad Request and no allow-origin header
+            opt_resp = client.options(
+                "/api/chat",
+                headers={
+                    "Origin": bad_origin,
+                    "Access-Control-Request-Method": "POST",
+                },
+            )
+            assert opt_resp.status_code == 400
+            assert opt_resp.headers.get("access-control-allow-origin") is None
+
+            # Direct POST request receives no Access-Control-Allow-Origin header
+            post_resp = client.post(
+                "/api/chat",
+                headers={"Origin": bad_origin},
+                json={"message": "Can I cancel my subscription order?"},
+            )
+            assert post_resp.headers.get("access-control-allow-origin") is None
+
+    def test_cors_config_environment_variable_parsing(self, monkeypatch):
+        """load_api_config parses CORS_ORIGINS while maintaining localhost support and no wildcard regex."""
+        monkeypatch.setenv(
+            "CORS_ORIGINS",
+            "https://apple-support-ai-agent.vercel.app,https://staging-agent.vercel.app",
+        )
+        monkeypatch.delenv("CORS_ORIGIN_REGEX", raising=False)
+        monkeypatch.delenv("CORS_VERCEL_REGEX", raising=False)
+
+        cfg = load_api_config()
+        # Default localhost origins preserved
+        assert "http://localhost:3000" in cfg.cors_origins
+        assert "http://localhost:5173" in cfg.cors_origins
+        assert "http://127.0.0.1:3000" in cfg.cors_origins
+        assert "http://127.0.0.1:5173" in cfg.cors_origins
+        # Custom origins appended
+        assert "https://apple-support-ai-agent.vercel.app" in cfg.cors_origins
+        assert "https://staging-agent.vercel.app" in cfg.cors_origins
+        # No wildcard regex active
+        assert cfg.cors_origin_regex is None
 
 
 # ---------------------------------------------------------------------------

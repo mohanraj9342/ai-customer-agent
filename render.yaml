@@ -23,9 +23,7 @@ services:
       - key: TARGET_BRAND
         value: AppleSupport
       - key: CORS_ORIGINS
-        value: "http://localhost:3000,http://localhost:5173"
-      - key: CORS_VERCEL_REGEX
-        value: "^https://.*\\.vercel\\.app$"
+        value: "http://localhost:3000,http://localhost:5173,https://apple-support-ai-agent.vercel.app"
       - key: API_DEFAULT_REVIEW_MODE
         value: deterministic
       - key: API_REQUEST_TIMEOUT_SECONDS

@@ -19,7 +19,6 @@ DEFAULT_CORS_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
 ]
-DEFAULT_VERCEL_REGEX = r"^https://.*\.vercel\.app$"
 
 
 @dataclass(frozen=True)
@@ -29,7 +28,7 @@ class ApiConfig:
     host: str = "0.0.0.0"
     port: int = 8000
     cors_origins: List[str] = field(default_factory=lambda: list(DEFAULT_CORS_ORIGINS))
-    cors_origin_regex: Optional[str] = DEFAULT_VERCEL_REGEX
+    cors_origin_regex: Optional[str] = None
     default_review_mode: str = "deterministic"
     request_timeout_seconds: float = 30.0
     max_message_length: int = 1000
@@ -40,7 +39,7 @@ class ApiConfig:
             "host": self.host,
             "port": self.port,
             "cors_origins_count": len(self.cors_origins),
-            "cors_vercel_regex_active": bool(self.cors_origin_regex),
+            "cors_regex_active": bool(self.cors_origin_regex),
             "default_review_mode": self.default_review_mode,
             "request_timeout_seconds": self.request_timeout_seconds,
             "max_message_length": self.max_message_length,
@@ -67,13 +66,12 @@ def load_api_config() -> ApiConfig:
         for item in raw_origins.split(","):
             cleaned = item.strip()
             if cleaned and cleaned not in origins:
-                # If wildcard *.vercel.app is provided in origins, we rely on regex
-                if "*.vercel.app" in cleaned:
-                    continue
                 origins.append(cleaned)
 
-    # Vercel preview origin regex
-    vercel_regex = os.environ.get("CORS_VERCEL_REGEX", DEFAULT_VERCEL_REGEX).strip() or None
+    # Optional origin regex (defaults to None; wildcard regex disabled for production security)
+    cors_regex = (
+        os.environ.get("CORS_ORIGIN_REGEX", os.environ.get("CORS_VERCEL_REGEX", "")).strip() or None
+    )
 
     # Review mode default
     review_mode = os.environ.get("API_DEFAULT_REVIEW_MODE", "deterministic").strip().lower()
@@ -98,7 +96,7 @@ def load_api_config() -> ApiConfig:
         host=host,
         port=port,
         cors_origins=origins,
-        cors_origin_regex=vercel_regex,
+        cors_origin_regex=cors_regex,
         default_review_mode=review_mode,
         request_timeout_seconds=timeout,
         max_message_length=max_length,
