@@ -72,10 +72,19 @@ class HistoricalResponseRetriever:
             raise FileNotFoundError(f"Embeddings matrix not found at: {self.embeddings_path}")
 
         logger.info("Loading retrieval corpus from: %s", self.corpus_path)
-        self.df = pd.read_csv(self.corpus_path)
+        cols = [
+            "corpus_id",
+            "thread_id",
+            "customer_tweet_id",
+            "customer_text",
+            "brand_tweet_id",
+            "brand_text",
+            "inferred_intent",
+        ]
+        self.df = pd.read_csv(self.corpus_path, usecols=cols)
 
-        logger.info("Loading precomputed embeddings from: %s", self.embeddings_path)
-        self.embeddings = np.load(self.embeddings_path)
+        logger.info("Loading precomputed embeddings (memory-mapped) from: %s", self.embeddings_path)
+        self.embeddings = np.load(self.embeddings_path, mmap_mode="r")
 
         if len(self.df) != len(self.embeddings):
             raise ValueError(
@@ -87,6 +96,10 @@ class HistoricalResponseRetriever:
             len(self.df),
             self.embeddings.shape[1],
         )
+
+        import torch
+        torch.set_grad_enabled(False)
+        torch.set_num_threads(1)
 
         logger.info("Loading SentenceTransformer model '%s' on %s...", self.model_name, self.device)
         self.model = SentenceTransformer(self.model_name, device=self.device)

@@ -63,6 +63,8 @@ def create_app(
         if getattr(app.state, "reviewer", None) is None:
             app.state.reviewer = AgentReviewer()
         app.state.api_config = config
+        import gc
+        gc.collect()
         logger.info("Pipeline pre-warming complete. Ready for requests.")
         yield
         logger.info("Application shutting down.")

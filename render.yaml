@@ -11,7 +11,7 @@ services:
     runtime: python
     region: oregon
     plan: standard
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && pip install --no-cache-dir -r requirements.txt
     startCommand: uvicorn src.api.app:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     autoDeploy: true
@@ -28,3 +28,5 @@ services:
         value: deterministic
       - key: API_REQUEST_TIMEOUT_SECONDS
         value: "30.0"
+      - key: WEB_CONCURRENCY
+        value: "1"
